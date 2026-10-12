@@ -300,7 +300,7 @@ static bool st_run(const uint8_t* in, uint32_t sw, uint32_t sh, uint8_t* out, ui
     if (!st_make_buffer(out_bytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT, &j.down_buf, &j.down_mem, &j.down_map)) goto fail;
     memcpy(j.up_map, in, (size_t)in_bytes);
 
-    if (!fx_up_create_resources(&g_st.up, ST_FORMAT, ow, oh, &j.view, 1)) goto fail;
+    if (!fx_up_create_resources(&g_st.up, ST_FORMAT, ow, oh, sw, sh, FX_UP_WANT_PRE(packed_sharp), &j.view, 1)) goto fail;
 
     VkCommandPoolCreateInfo pci = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
     pci.queueFamilyIndex = g_st.family;
@@ -342,7 +342,7 @@ static bool st_run(const uint8_t* in, uint32_t sw, uint32_t sh, uint8_t* out, ui
     if (mode == FX_UP_NEAREST) filter = VK_FILTER_NEAREST;
     else if (mode == FX_UP_CUBIC) filter = VK_FILTER_CUBIC_EXT;
     VkImage result = fx_up_record(&g_st.up, cmd, mode, FX_UP_SHARP_VALUE(packed_sharp),
-                                  FX_UP_SHARP_METHOD(packed_sharp), 0, 0, j.image, sw, sh, filter);
+                                  FX_UP_SHARP_METHOD(packed_sharp), packed_sharp, 0, 0, j.image, sw, sh, filter);
 
     /* readback (result is GENERAL and visible to transfer reads) */
     VkBufferImageCopy back;

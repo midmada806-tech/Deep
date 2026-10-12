@@ -452,6 +452,45 @@ class DrawerOverlay(
             true
         })
 
+        // deband / denoise / anti-aliasing / dither, switched live (they also run without upscaling)
+        var enDeband = upCfg.deband
+        var enDenoise = upCfg.denoise
+        var enAa = upCfg.aa
+        var enDither = upCfg.dither
+        fun applyEnhance() {
+            Fluxa.setEnhance(enDeband, enDenoise, enAa, enDither)
+            DisplayTuner.saveEnhance(host, enDeband, enDenoise, enAa, enDither)
+        }
+        box.addView(text("ลดสัญญาณรบกวน/บล็อก (Denoise/Deblock)", 13f, color = Palette.MUTED).apply { setPadding(0, dp(16), 0, dp(6)) })
+        box.addView(Slider(
+            kit, 0, 100, enDenoise, step = 5, format = { if (it == 0) "ปิด" else "$it%" },
+        ) { v ->
+            enDenoise = v
+            applyEnhance()
+        })
+        box.addView(text("ลดฟันปลา (Anti-aliasing)", 13f, color = Palette.MUTED).apply { setPadding(0, dp(16), 0, dp(6)) })
+        box.addView(chipRow(
+            DisplayTuner.aaModes.map { it.second },
+            DisplayTuner.aaModes.indexOfFirst { it.first == enAa }.coerceAtLeast(0),
+        ) { i ->
+            enAa = DisplayTuner.aaModes[i].first
+            applyEnhance()
+            true
+        })
+        box.addView(text("ลดแถบสี (Deband)", 13f, color = Palette.MUTED).apply { setPadding(0, dp(16), 0, dp(6)) })
+        box.addView(Slider(
+            kit, 0, 100, enDeband, step = 5, format = { if (it == 0) "ปิด" else "$it%" },
+        ) { v ->
+            enDeband = v
+            applyEnhance()
+        })
+        box.addView(text("Dither", 13f, color = Palette.MUTED).apply { setPadding(0, dp(16), 0, dp(6)) })
+        box.addView(chipRow(listOf("ปิด", "เปิด"), if (enDither) 1 else 0) { i ->
+            enDither = i == 1
+            applyEnhance()
+            true
+        })
+
         // stop
         val stop = text("หยุด $appName", 16f, bold = true).apply {
             gravity = Gravity.CENTER

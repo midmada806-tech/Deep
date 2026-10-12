@@ -411,7 +411,8 @@ class CompareActivity : Activity() {
             val buf = ByteBuffer.allocate(rw * rh * 4)
             low.copyPixelsToBuffer(buf)
             val t0 = SystemClock.elapsedRealtimeNanos()
-            val out = FluxaNative.nativeStillUpscale(buf.array(), rw, rh, ow, oh, mode, sharp or (method shl 8))
+            val out = FluxaNative.nativeStillUpscale(buf.array(), rw, rh, ow, oh, mode,
+                sharp or (method shl 8) or DisplayTuner.config(this).enhancePacked())
             val ms = (SystemClock.elapsedRealtimeNanos() - t0) / 1_000_000.0
             var result: Bitmap? = null
             if (out != null && out.size >= ow * oh * 4) {

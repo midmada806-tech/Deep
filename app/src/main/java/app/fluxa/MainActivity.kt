@@ -40,6 +40,10 @@ class MainActivity : Activity() {
     private lateinit var dispSharpSlider: Slider
     private lateinit var dispSharpMethodSeg: Segmented
     private lateinit var dispOutSlider: Slider
+    private lateinit var dispDenoiseSlider: Slider
+    private lateinit var dispAaSeg: Segmented
+    private lateinit var dispDebandSlider: Slider
+    private lateinit var dispDitherSeg: Segmented
     private var dispFilterModes: List<Pair<Int, String>> = emptyList()
     private lateinit var dispDpiBox: LinearLayout
     private lateinit var dispInfo: TextView
@@ -219,6 +223,10 @@ class MainActivity : Activity() {
         upscaleSharpMethod = DisplayTuner.sharpMethods.getOrNull(dispSharpMethodSeg.selected)?.first
             ?: DisplayTuner.SHARP_RCAS,
         outPercent = dispOutSlider.value,
+        deband = dispDebandSlider.value,
+        denoise = dispDenoiseSlider.value,
+        aa = DisplayTuner.aaModes.getOrNull(dispAaSeg.selected)?.first ?: DisplayTuner.AA_OFF,
+        dither = dispDitherSeg.selected == 1,
     )
 
     private fun refreshDisplayInfo() {
@@ -325,6 +333,41 @@ class MainActivity : Activity() {
         }
         card.addView(kit.caption("วิธีเพิ่มความคม · RCAS (FSR1) · CAS (ปรับตามคอนทราสต์ของแต่ละช่องสี) · Adaptive (ไม่ยุ่งกับพื้นเรียบ ลดฮาโลที่ขอบ)"))
         card.addView(dispSharpMethodSeg)
+
+        // ---- extra enhancement passes (also work without upscaling) ----
+        dispDenoiseSlider = Slider(
+            kit, 0, 100, 0, step = 5, format = { if (it == 0) "ปิด" else "$it%" },
+        ) { saveInt(DisplayTuner.K_ENH_DENOISE, it) }
+        card.addView(kit.caption("ลดสัญญาณรบกวน/บล็อก (Denoise/Deblock) · ทำที่ความละเอียดต้นทางก่อนอัปสเกล รักษาขอบไว้ · ส่วน Deblock ได้ผลเต็มที่กับวิดีโอที่แสดงขนาดจริง 1:1 (เปลี่ยนสดได้ในแผง)"))
+        card.addView(dispDenoiseSlider)
+
+        val savedAa = prefs.getInt(DisplayTuner.K_ENH_AA, DisplayTuner.AA_OFF)
+        dispAaSeg = Segmented(
+            kit, DisplayTuner.aaModes.map { it.second },
+            DisplayTuner.aaModes.indexOfFirst { it.first == savedAa }.coerceAtLeast(0),
+            textSp = 13f,
+        ) { i ->
+            saveInt(DisplayTuner.K_ENH_AA, DisplayTuner.aaModes[i].first)
+            true
+        }
+        card.addView(kit.caption("ลดฟันปลา (Anti-aliasing) ก่อนอัปสเกล · FXAA นุ่มทั้งภาพ · SMAA-lite แตะเฉพาะพิกเซลที่เป็นขอบ ภาพยังคม (เป็นแบบ 1 pass ไม่ใช่ SMAA เต็ม)"))
+        card.addView(dispAaSeg)
+
+        dispDebandSlider = Slider(
+            kit, 0, 100, 0, step = 5, format = { if (it == 0) "ปิด" else "$it%" },
+        ) { saveInt(DisplayTuner.K_ENH_DEBAND, it) }
+        card.addView(kit.caption("ลดแถบสี (Deband) · ทำท้ายสุดที่ความละเอียดเอาต์พุต ช่วยฉากไล่เฉดที่เป็นขั้น"))
+        card.addView(dispDebandSlider)
+
+        val savedDither = prefs.getBoolean(DisplayTuner.K_ENH_DITHER, false)
+        dispDitherSeg = Segmented(
+            kit, listOf("ปิด", "เปิด"), if (savedDither) 1 else 0, textSp = 13f,
+        ) { i ->
+            saveBool(DisplayTuner.K_ENH_DITHER, i == 1)
+            true
+        }
+        card.addView(kit.caption("Dither · เติมนอยส์ละเอียดก่อนลงค่า 8-bit ให้แถบสีที่เหลือกลืนไปกับภาพ"))
+        card.addView(dispDitherSeg)
 
         dispOutSlider = Slider(
             kit, DisplayTuner.MIN_OUT_PERCENT, DisplayTuner.MAX_OUT_PERCENT, DisplayTuner.MAX_OUT_PERCENT,
@@ -444,6 +487,10 @@ class MainActivity : Activity() {
             DisplayTuner.sharpMethods.indexOfFirst { it.first == dc.upscaleSharpMethod }.coerceAtLeast(0),
         )
         dispOutSlider.set(dc.outPercent)
+        dispDenoiseSlider.set(dc.denoise)
+        dispAaSeg.select(DisplayTuner.aaModes.indexOfFirst { it.first == dc.aa }.coerceAtLeast(0))
+        dispDebandSlider.set(dc.deband)
+        dispDitherSeg.select(if (dc.dither) 1 else 0)
         refreshDisplayInfo()
     }
 

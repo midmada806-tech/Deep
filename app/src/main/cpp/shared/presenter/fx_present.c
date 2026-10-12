@@ -133,8 +133,10 @@ struct FxPresenter {
     uint32_t up_mode;
     uint32_t up_sharp;
     uint32_t up_sharp_method; /* FX_SHARP_*: which pass the strength drives */
+    uint32_t up_enh;          /* packed deband / denoise / AA / dither (see fx_upscale.h) */
     FxUpscaler up;
     bool up_failed;  /* pipelines or resources could not be built: fall back to a blit */
+    bool up_pre_failed; /* the source-size scratch images could not be made: denoise / AA stay off */
     bool cubic_ext;  /* VK_EXT_filter_cubic enabled on the device */
     bool cubic_ok;   /* ... and the target format can be sampled with the cubic filter */
     VkImage swapchain_images[FX_MAX_SWAPCHAIN_IMAGES];
@@ -291,10 +293,12 @@ typedef struct {
     VkFilter filter;
 } FxScaled;
 
-static bool fx_up_ensure(FxPresenter* fg) {
+static bool fx_up_ensure(FxPresenter* fg, bool want_pre) {
     if (fg->up_failed || !fg->up.pipes_ready) return false;
     if (fg->up.res_ready && fg->up.width == fg->out_extent.width
-        && fg->up.height == fg->out_extent.height) {
+        && fg->up.height == fg->out_extent.height && fg->up.src_w == fg->extent.width
+        && fg->up.src_h == fg->extent.height
+        && (!want_pre || fg->up.has_pre || fg->up_pre_failed)) {
         return true;
     }
     vkDeviceWaitIdle(fg->device);
@@ -302,25 +306,34 @@ static bool fx_up_ensure(FxPresenter* fg) {
     for (uint32_t i = 0; i < FX_MAX_TARGETS; i++) views[i] = fg->targets[i].view;
     if (!fg->targets_built
         || !fx_up_create_resources(&fg->up, fg->target_format, fg->out_extent.width,
-                                   fg->out_extent.height, views, FX_MAX_TARGETS)) {
+                                   fg->out_extent.height, fg->extent.width, fg->extent.height,
+                                   want_pre && !fg->up_pre_failed, views, FX_MAX_TARGETS)) {
         fg->up_failed = true;
         FX_LOGW("upscaler unavailable; using a plain blit");
         return false;
     }
+    if (want_pre && !fg->up.has_pre) fg->up_pre_failed = true;
     return true;
 }
 
-/* Runs the configured upscale for `src` (an extent-sized target in GENERAL layout) and says what
- * is left to blit 1:1 / filtered into the swapchain image. Records only compute / transfer work on
- * its own images, so it can sit before the swapchain image's barrier. */
+/* Runs the configured upscale + enhancement chain for `src` (an extent-sized target in GENERAL
+ * layout) and says what is left to blit 1:1 / filtered into the swapchain image. Records only
+ * compute / transfer work on its own images, so it can sit before the swapchain image's barrier.
+ * Without upscaling the chain still runs when denoise / AA / deband / dither is on. */
 static FxScaled fx_scale_source(FxPresenter* fg, VkCommandBuffer cmd, VkImage src,
                                 uint32_t src_index) {
     FxScaled out = {src, fg->extent.width, fg->extent.height, VK_FILTER_LINEAR};
-    if (!fg->upscale) return out;
+    const uint32_t enh = __atomic_load_n(&fg->up_enh, __ATOMIC_RELAXED);
+    const bool enhance = FX_UP_WANT_ENH(enh);
+    if (!fg->upscale && !enhance) return out;
 
     uint32_t mode = __atomic_load_n(&fg->up_mode, __ATOMIC_RELAXED);
-    const uint32_t sharp = __atomic_load_n(&fg->up_sharp, __ATOMIC_RELAXED);
+    uint32_t sharp = __atomic_load_n(&fg->up_sharp, __ATOMIC_RELAXED);
     const uint32_t sharp_method = __atomic_load_n(&fg->up_sharp_method, __ATOMIC_RELAXED);
+    if (!fg->upscale) {
+        mode = FX_UP_LINEAR; /* 1:1: only the enhancement passes run, the upscale / sharpen settings do not apply */
+        sharp = 0;
+    }
     if (mode == FX_UP_CUBIC && !fg->cubic_ok) mode = FX_UP_LINEAR;
 
     const bool shader = fx_up_is_shader_mode(mode);
@@ -328,9 +341,9 @@ static FxScaled fx_scale_source(FxPresenter* fg, VkCommandBuffer cmd, VkImage sr
     if (mode == FX_UP_NEAREST) filter = VK_FILTER_NEAREST;
     else if (mode == FX_UP_CUBIC) filter = VK_FILTER_CUBIC_EXT;
 
-    if ((shader || sharp > 0) && fx_up_ensure(fg)) {
-        out.image = fx_up_record(&fg->up, cmd, mode, sharp, sharp_method, src_index, fg->frame_index,
-                                 src, fg->extent.width, fg->extent.height, filter);
+    if ((shader || sharp > 0 || enhance) && fx_up_ensure(fg, FX_UP_WANT_PRE(enh))) {
+        out.image = fx_up_record(&fg->up, cmd, mode, sharp, sharp_method, enh, src_index,
+                                 fg->frame_index, src, fg->extent.width, fg->extent.height, filter);
         out.w = fg->out_extent.width;
         out.h = fg->out_extent.height;
         out.filter = VK_FILTER_NEAREST; /* same size: a plain copy */
@@ -1829,6 +1842,7 @@ FxPresenter* fx_create(JNIEnv* env, jobject context, const char* driver_name,
     fg->up_mode = upscale_mode <= FX_UP_MAX_MODE ? upscale_mode : FX_UP_LINEAR;
     fg->up_sharp = FX_UP_SHARP_VALUE(upscale_sharp);
     fg->up_sharp_method = FX_UP_SHARP_METHOD(upscale_sharp);
+    fg->up_enh = upscale_sharp;
     fg->out_extent.width = fg->upscale ? out_width : width;
     fg->out_extent.height = fg->upscale ? out_height : height;
     fg->multiplier = multiplier;
@@ -1865,12 +1879,11 @@ FxPresenter* fx_create(JNIEnv* env, jobject context, const char* driver_name,
     if (!fx_create_frames(fg)) goto fail;
     if (!fx_create_swapchain(fg)) goto fail;
     if (!fx_create_targets(fg)) goto fail;
-    if (fg->upscale) {
-        vkGetPhysicalDeviceMemoryProperties(fg->physical_device, &fg->memory_properties);
-        if (!fx_up_create_pipes(&fg->up, fg->device, &fg->memory_properties)) {
-            fg->up_failed = true;
-            FX_LOGW("upscaler pipelines unavailable; upscaling uses a plain blit");
-        }
+    /* always built: the denoise / AA / deband passes also run without upscaling */
+    vkGetPhysicalDeviceMemoryProperties(fg->physical_device, &fg->memory_properties);
+    if (!fx_up_create_pipes(&fg->up, fg->device, &fg->memory_properties)) {
+        fg->up_failed = true;
+        FX_LOGW("upscaler pipelines unavailable; upscaling uses a plain blit");
     }
 
     if (!fx_dis_acquire(fg)) goto fail;
@@ -1925,6 +1938,7 @@ void fx_configure(FxPresenter* fg, uint32_t multiplier, float refresh_rate, floa
                      __ATOMIC_RELAXED);
     __atomic_store_n(&fg->up_sharp, FX_UP_SHARP_VALUE(upscale_sharp), __ATOMIC_RELAXED);
     __atomic_store_n(&fg->up_sharp_method, FX_UP_SHARP_METHOD(upscale_sharp), __ATOMIC_RELAXED);
+    __atomic_store_n(&fg->up_enh, upscale_sharp, __ATOMIC_RELAXED);
     pthread_mutex_lock(&fg->lock);
     fg->multiplier = multiplier;
     fg->dis_min_side = dis_min_side ? dis_min_side : FX_DIS_MIN_SIDE_DEFAULT;

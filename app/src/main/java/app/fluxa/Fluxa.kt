@@ -30,6 +30,10 @@ object Fluxa {
     private var upscaleMode = DisplayTuner.FILTER_LINEAR
     private var upscaleSharp = 0
     private var upscaleSharpMethod = DisplayTuner.SHARP_RCAS
+    private var enhDeband = 0
+    private var enhDenoise = 0
+    private var enhAa = DisplayTuner.AA_OFF
+    private var enhDither = false
     private var refreshRate = 0f
     private var generatingEnabled = true
     private var rebinder: Runnable? = null
@@ -97,6 +101,12 @@ object Fluxa {
         upscaleSharpMethod = sharpMethod.coerceIn(DisplayTuner.SHARP_RCAS, DisplayTuner.SHARP_ADAPTIVE)
 
         val context = appContext ?: return output
+        DisplayTuner.config(context).let {
+            enhDeband = it.deband
+            enhDenoise = it.denoise
+            enhAa = it.aa
+            enhDither = it.dither
+        }
         if (!FluxaNative.ensureLoaded()) {
             Log.w(TAG, "native library unavailable; frame generation stays off")
             return output
@@ -235,8 +245,27 @@ object Fluxa {
         pushConfig()
     }
 
-    /** Native side takes strength (bits 0..7) and sharpen pass (bits 8..11) in one int. */
-    private fun packedSharp(): Int = upscaleSharp or (upscaleSharpMethod shl 8)
+    /**
+     * Switches deband / denoise-deblock / anti-aliasing / dither live. Unlike the upscale filter
+     * these also run when the output is not upscaled.
+     */
+    @JvmStatic
+    @Synchronized
+    fun setEnhance(deband: Int, denoise: Int, aa: Int, dither: Boolean) {
+        enhDeband = deband.coerceIn(0, 100)
+        enhDenoise = denoise.coerceIn(0, 100)
+        enhAa = aa.coerceIn(DisplayTuner.AA_OFF, DisplayTuner.AA_SMAA)
+        enhDither = dither
+        pushConfig()
+    }
+
+    /**
+     * Native side takes strength (bits 0..7), sharpen pass (bits 8..11) and the enhancement fields
+     * (deband 12..18, denoise 19..25, AA 26..27, dither 28) in one int.
+     */
+    private fun packedSharp(): Int =
+        upscaleSharp or (upscaleSharpMethod shl 8) or
+            DisplayTuner.packEnhance(enhDeband, enhDenoise, enhAa, enhDither)
 
     val currentUpscaleMode: Int
         @Synchronized get() = upscaleMode

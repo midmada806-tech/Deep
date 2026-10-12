@@ -42,6 +42,10 @@ object DisplayTuner {
     const val K_UPSCALE_FILTER = "disp_upscale_filter"
     const val K_UPSCALE_SHARP = "disp_upscale_sharp"
     const val K_UPSCALE_SHARP_METHOD = "disp_upscale_sharp_method"
+    const val K_ENH_DEBAND = "disp_enh_deband"
+    const val K_ENH_DENOISE = "disp_enh_denoise"
+    const val K_ENH_AA = "disp_enh_aa"
+    const val K_ENH_DITHER = "disp_enh_dither"
     const val K_OUT_PERCENT = "disp_out_percent"
     const val K_CAP_CUBIC = "cap_cubic"
 
@@ -62,6 +66,11 @@ object DisplayTuner {
     const val SHARP_RCAS = 0
     const val SHARP_CAS = 1
     const val SHARP_ADAPTIVE = 2
+
+    // Anti-aliasing before the upscale: ids shared with the native side (FX_AA_*)
+    const val AA_OFF = 0
+    const val AA_FXAA = 1
+    const val AA_SMAA = 2
 
     const val MIN_OUT_PERCENT = 50
     const val MAX_OUT_PERCENT = 100
@@ -90,7 +99,18 @@ object DisplayTuner {
         val upscaleSharpMethod: Int = SHARP_RCAS,
         /** Output (shown) resolution as a percentage of the original screen resolution. */
         val outPercent: Int = MAX_OUT_PERCENT,
-    )
+        /** Deband strength (final pass at output size): 0 = off, 1..100. */
+        val deband: Int = 0,
+        /** Denoise / deblock strength (pre pass at render size): 0 = off, 1..100. */
+        val denoise: Int = 0,
+        /** Anti-aliasing before the upscale: [AA_OFF], [AA_FXAA] or [AA_SMAA]. */
+        val aa: Int = AA_OFF,
+        /** Dither noise before the 8-bit store. */
+        val dither: Boolean = false,
+    ) {
+        /** The extra enhancement fields in the native packed int (bits 12..28 above the sharpen bits). */
+        fun enhancePacked(): Int = packEnhance(deband, denoise, aa, dither)
+    }
 
     data class Plan(val width: Int, val height: Int, val dpi: Int)
 
@@ -111,6 +131,10 @@ object DisplayTuner {
             upscaleSharp = p.getInt(K_UPSCALE_SHARP, 0).coerceIn(0, 100),
             upscaleSharpMethod = p.getInt(K_UPSCALE_SHARP_METHOD, SHARP_RCAS).coerceIn(SHARP_RCAS, SHARP_ADAPTIVE),
             outPercent = p.getInt(K_OUT_PERCENT, MAX_OUT_PERCENT).coerceIn(MIN_OUT_PERCENT, MAX_OUT_PERCENT),
+            deband = p.getInt(K_ENH_DEBAND, 0).coerceIn(0, 100),
+            denoise = p.getInt(K_ENH_DENOISE, 0).coerceIn(0, 100),
+            aa = p.getInt(K_ENH_AA, AA_OFF).coerceIn(AA_OFF, AA_SMAA),
+            dither = p.getBoolean(K_ENH_DITHER, false),
         )
     }
 
@@ -144,6 +168,26 @@ object DisplayTuner {
             .putInt(K_UPSCALE_SHARP_METHOD, sharpMethod)
             .apply()
     }
+
+    /** Packs deband / denoise / AA / dither the way the native side reads them (FX_UP_DEBAND etc.). */
+    fun packEnhance(deband: Int, denoise: Int, aa: Int, dither: Boolean): Int =
+        (deband.coerceIn(0, 100) shl 12) or
+            (denoise.coerceIn(0, 100) shl 19) or
+            (aa.coerceIn(AA_OFF, AA_SMAA) shl 26) or
+            (if (dither) 1 shl 28 else 0)
+
+    /** Persists the live enhancement choice (the drawer changes it while a session runs). */
+    fun saveEnhance(ctx: Context, deband: Int, denoise: Int, aa: Int, dither: Boolean) {
+        prefs(ctx).edit()
+            .putInt(K_ENH_DEBAND, deband)
+            .putInt(K_ENH_DENOISE, denoise)
+            .putInt(K_ENH_AA, aa)
+            .putBoolean(K_ENH_DITHER, dither)
+            .apply()
+    }
+
+    /** (AA id, short label) for the anti-aliasing picker. */
+    val aaModes: List<Pair<Int, String>> = listOf(AA_OFF to "ปิด", AA_FXAA to "FXAA", AA_SMAA to "SMAA-lite")
 
     /** (method id, short label) for the sharpen pass picker. */
     val sharpMethods: List<Pair<Int, String>> = listOf(SHARP_RCAS to "RCAS", SHARP_CAS to "CAS", SHARP_ADAPTIVE to "Adaptive")

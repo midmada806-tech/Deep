@@ -1,0 +1,77 @@
+// Final pass at output resolution: deband + dither.
+//   deband (p1 = strength 0..1): for each pixel average 4 taps on a ring of random radius / angle
+//     (2 iterations); when every tap is within a small threshold of the centre the pixel is pulled
+//     to the average, which melts the contour steps of smooth gradients. Real edges exceed the
+//     threshold and are kept.
+//   dither (p2 = amplitude in 8-bit LSB, 0 = off): triangular-PDF noise before the 8-bit store, so
+//     what is left of the banding turns into fine noise. p3 = per-frame seed.
+
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) uniform sampler2D srcTex;
+layout(set = 0, binding = 1) uniform writeonly image2D dstImg;
+
+layout(push_constant) uniform PC {
+    float srcW;
+    float srcH;
+    float dstW;
+    float dstH;
+    float sharp;
+    float p1;
+    float p2;
+    float p3;
+} pc;
+
+ivec2 dims() { return ivec2(int(pc.dstW), int(pc.dstH)); }
+vec3 fetchRGB(ivec2 p) { return texelFetch(srcTex, clamp(p, ivec2(0), dims() - ivec2(1)), 0).rgb; }
+
+uint pcg(uint v) {
+    uint state = v * 747796405u + 2891336453u;
+    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+float u01(uint h) { return float(h >> 8u) * (1.0 / 16777216.0); }
+
+void main() {
+    ivec2 ip = ivec2(gl_GlobalInvocationID.xy);
+    if (ip.x >= int(pc.dstW) || ip.y >= int(pc.dstH)) return;
+
+    vec3 c = fetchRGB(ip);
+    float s = clamp(pc.p1, 0.0, 1.0);
+    uint seed = uint(max(pc.p3, 0.0));
+    uint h = pcg(uint(ip.x) + pcg(uint(ip.y) + pcg(seed)));
+
+    if (s > 0.0) {
+        float thr = mix(2.0, 12.0, s) / 255.0;
+        float range = mix(8.0, 32.0, s);
+        for (int it = 0; it < 2; it++) {
+            h = pcg(h);
+            float dist = u01(h) * range + 1.0;
+            h = pcg(h);
+            float ang = u01(h) * 6.2831853;
+            ivec2 o = ivec2(round(vec2(cos(ang), sin(ang)) * dist));
+            vec3 p1 = fetchRGB(ip + o);
+            vec3 p2 = fetchRGB(ip - o);
+            vec3 p3 = fetchRGB(ip + ivec2(-o.y, o.x));
+            vec3 p4 = fetchRGB(ip + ivec2(o.y, -o.x));
+            vec3 avg = (p1 + p2 + p3 + p4) * 0.25;
+            vec3 dm = max(max(abs(c - p1), abs(c - p2)), max(abs(c - p3), abs(c - p4)));
+            float worst = max(dm.r, max(dm.g, dm.b));
+            float w = 1.0 - smoothstep(0.5 * thr, thr, worst);
+            c = mix(c, avg, w);
+        }
+    }
+
+    if (pc.p2 > 0.0) {
+        h = pcg(h ^ 0x9E3779B9u);
+        float n1 = u01(h);
+        h = pcg(h);
+        float n2 = u01(h);
+        c += (n1 + n2 - 1.0) * pc.p2 / 255.0;
+    }
+
+    imageStore(dstImg, ip, vec4(clamp(c, 0.0, 1.0), 1.0));
+}

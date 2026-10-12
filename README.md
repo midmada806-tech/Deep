@@ -72,3 +72,28 @@ The EASU and RCAS shaders follow AMD FidelityFX Super Resolution 1.0 (MIT licenc
 Copyright (c) 2021 Advanced Micro Devices, Inc.). The CAS shader follows AMD FidelityFX CAS (MIT licence,
 Advanced Micro Devices, Inc.). The NIS mode is NOT NVIDIA's shader: it is an independent implementation
 of the published idea (edge detection constants taken from NIS) and does not use NVIDIA's coefficient tables.
+
+## Enhancement passes (denoise / AA / deband / dither)
+
+Chain per shown frame (each stage is optional and only runs when its setting is on; they also run
+when the output is **not** upscaled):
+
+`source -> Denoise/Deblock -> FXAA or SMAA-lite -> upscale -> sharpen -> Deband + Dither -> screen`
+
+| Pass | Where | How |
+| --- | --- | --- |
+| Denoise / Deblock | render size, before the upscale (`shaders/up_denoise.comp`) | edge-preserving bilateral filter (13-tap diamond) + light 8x8-grid deblock gated on small luma steps. Deblock is only fully effective when block-coded video is shown 1:1; elsewhere the grid is not aligned and it stays very gentle |
+| FXAA | render size, before the upscale (`shaders/up_fxaa.comp`) | FXAA 3.11 quality algorithm (defaults 0.125 / 0.0312 / 0.75), compute version |
+| SMAA-lite | render size, before the upscale (`shaders/up_smaa.comp`) | single-pass morphological AA: luma edge detection, edge search (12 px), L/Z/U end classification, area-based blend. **Not** the full 3-pass SMAA 1x (that needs the area / search lookup textures); it only touches pixels on detected edges |
+| Deband | output size, last (`shaders/up_deband.comp`) | 2 iterations x 4 taps on a random ring (8..32 px); the pixel is pulled to the average only when all taps are within a small threshold, so real edges stay |
+| Dither | same pass | triangular-PDF noise (+-1 LSB) before the 8-bit store |
+
+Settings: card on the home screen + live in the in-game drawer (stored as `disp_enh_*`). The values travel
+to native in the same packed int as the sharpen settings (bits 12..18 deband, 19..25 denoise, 26..27 AA,
+28 dither), so the JNI signatures did not change. Denoise / AA need two extra render-size images per
+frame slot (allocated only while one of them is on); if that allocation fails the passes are skipped and
+the frame is shown normally. The still-image Compare screen uses the saved values.
+
+Cost: every enabled pass is one more full-frame compute dispatch competing with frame generation, so enable
+only what the content needs (FXAA / SMAA-lite and Denoise run at render size, which is the cheap place;
+Deband runs at output size).
