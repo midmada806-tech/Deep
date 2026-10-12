@@ -48,6 +48,10 @@ class CompareActivity : Activity() {
     private lateinit var methodSeg: Segmented
     private lateinit var percentSlider: Slider
     private lateinit var outSlider: Slider
+    private lateinit var denoiseSlider: Slider
+    private lateinit var aaSeg: Segmented
+    private lateinit var debandSlider: Slider
+    private lateinit var ditherSeg: Segmented
 
     private val prefs by lazy { getSharedPreferences("fluxa", Context.MODE_PRIVATE) }
     private val worker = Executors.newSingleThreadExecutor { Thread(it, "fluxa-compare") }
@@ -153,6 +157,41 @@ class CompareActivity : Activity() {
         card.addView(kit.caption("ความละเอียดเอาต์พุต (% ของภาพเต็ม)"))
         card.addView(outSlider)
 
+        // ---- extra enhancement passes: compared with exactly the same chain the session runs ----
+        denoiseSlider = Slider(
+            kit, 0, 100, cfg.denoise, step = 5, format = { if (it == 0) "ปิด" else "$it%" },
+            onPreview = { if (!restoring) { prefs.edit().putInt(DisplayTuner.K_ENH_DENOISE, it).apply(); schedule() } },
+        ) { prefs.edit().putInt(DisplayTuner.K_ENH_DENOISE, it).apply() }
+        card.addView(kit.caption("ลดสัญญาณรบกวน (Denoise) · ก่อนอัปสเกล"))
+        card.addView(denoiseSlider)
+
+        aaSeg = Segmented(
+            kit, DisplayTuner.aaModes.map { it.second },
+            DisplayTuner.aaModes.indexOfFirst { it.first == cfg.aa }.coerceAtLeast(0),
+            textSp = 13f,
+        ) { i ->
+            prefs.edit().putInt(DisplayTuner.K_ENH_AA, DisplayTuner.aaModes[i].first).apply()
+            schedule()
+            true
+        }
+        card.addView(kit.caption("ลดฟันปลา (Anti-aliasing) · ก่อนอัปสเกล"))
+        card.addView(aaSeg)
+
+        debandSlider = Slider(
+            kit, 0, 100, cfg.deband, step = 5, format = { if (it == 0) "ปิด" else "$it%" },
+            onPreview = { if (!restoring) { prefs.edit().putInt(DisplayTuner.K_ENH_DEBAND, it).apply(); schedule() } },
+        ) { prefs.edit().putInt(DisplayTuner.K_ENH_DEBAND, it).apply() }
+        card.addView(kit.caption("ลดแถบสี (Deband) · ท้ายสุดที่ความละเอียดเอาต์พุต"))
+        card.addView(debandSlider)
+
+        ditherSeg = Segmented(kit, listOf("ปิด", "เปิด"), if (cfg.dither) 1 else 0, textSp = 13f) { i ->
+            prefs.edit().putBoolean(DisplayTuner.K_ENH_DITHER, i == 1).apply()
+            schedule()
+            true
+        }
+        card.addView(kit.caption("Dither"))
+        card.addView(ditherSeg)
+
         fun action(label: String, color: Int, onClick: () -> Unit) = kit.text(label, 13.5f, color, bold = true).apply {
             gravity = Gravity.CENTER
             setPadding(kit.dp(6), kit.dp(12), kit.dp(6), kit.dp(12))
@@ -175,7 +214,7 @@ class CompareActivity : Activity() {
         card.addView(row)
         card.addView(
             kit.text(
-                "ค่าที่เลือกบันทึกให้อัตโนมัติ · ใช้ค่าเดียวกับตอนรันจริง (โหมด/ความคม/% เรนเดอร์/% เอาต์พุต) · " +
+                "ค่าที่เลือกบันทึกให้อัตโนมัติ · ใช้ค่าเดียวกับตอนรันจริง (โหมด/ความคม/Denoise/AA/Deband/Dither/% เรนเดอร์/% เอาต์พุต) · " +
                     "ภาพเต็ม = ภาพที่เลือก (ย่อให้ด้านยาวไม่เกิน $MAX_SIDE px)",
                 11.5f, Palette.DIM,
             ).apply { setPadding(0, kit.dp(12), 0, 0) },
@@ -397,6 +436,8 @@ class CompareActivity : Activity() {
         val method = DisplayTuner.sharpMethods.getOrNull(methodSeg.selected)?.first ?: DisplayTuner.SHARP_RCAS
         val percent = percentSlider.value
         val outPercent = outSlider.value
+        val aaId = DisplayTuner.aaModes.getOrNull(aaSeg.selected)?.first ?: DisplayTuner.AA_OFF
+        val enh = DisplayTuner.packEnhance(debandSlider.value, denoiseSlider.value, aaId, ditherSeg.selected == 1)
         val my = generation.incrementAndGet()
         worker.execute {
             if (my != generation.get()) return@execute // a newer request is queued
@@ -412,7 +453,7 @@ class CompareActivity : Activity() {
             low.copyPixelsToBuffer(buf)
             val t0 = SystemClock.elapsedRealtimeNanos()
             val out = FluxaNative.nativeStillUpscale(buf.array(), rw, rh, ow, oh, mode,
-                sharp or (method shl 8) or DisplayTuner.config(this).enhancePacked())
+                sharp or (method shl 8) or enh)
             val ms = (SystemClock.elapsedRealtimeNanos() - t0) / 1_000_000.0
             var result: Bitmap? = null
             if (out != null && out.size >= ow * oh * 4) {
@@ -431,6 +472,13 @@ class CompareActivity : Activity() {
                     if (sharp > 0) {
                         append(" + ${DisplayTuner.sharpMethods.firstOrNull { it.first == method }?.second ?: "RCAS"} $sharp%")
                     }
+                    val extras = buildList {
+                        if (denoiseSlider.value > 0) add("Denoise ${denoiseSlider.value}%")
+                        if (aaId != DisplayTuner.AA_OFF) add(DisplayTuner.aaModes.first { it.first == aaId }.second)
+                        if (debandSlider.value > 0) add("Deband ${debandSlider.value}%")
+                        if (ditherSeg.selected == 1) add("Dither")
+                    }
+                    if (extras.isNotEmpty()) append(" + " + extras.joinToString(" + "))
                     append(" · ${rw}×${rh} → ${ow}×${oh} · ${"%.1f".format(ms)} ms")
                     if (ow <= rw) append("\nเอาต์พุตไม่เกินความละเอียดที่เรนเดอร์ → ตอนรันจริงจะไม่อัปสเกล")
                 }
