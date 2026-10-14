@@ -194,6 +194,12 @@ class Slider(
     private val step: Int = 1,
     private val format: (Int) -> String = { it.toString() },
     private val onPreview: (Int) -> Unit = {},
+    /** Optional left-hand label on the value line (the in-game drawer uses it instead of a caption above). */
+    private val title: String? = null,
+    /** Hide the min / max labels under the track (compact layouts). */
+    private val showRange: Boolean = true,
+    /** True while a finger is on the thumb (the drawer fades out so the effect is visible live). */
+    private val onDrag: (Boolean) -> Unit = {},
     private val onCommit: (Int) -> Unit,
 ) : LinearLayout(kit.ctx) {
     private val label = kit.text(format(value), 14f, Palette.AMBER, bold = true).apply { fontFeatureSettings = "tnum" }
@@ -207,7 +213,8 @@ class Slider(
         orientation = VERTICAL
         // live value on the right, range ends under the track
         val head = LinearLayout(kit.ctx).apply { gravity = Gravity.CENTER_VERTICAL }
-        head.addView(View(kit.ctx), LayoutParams(0, 1, 1f))
+        if (title != null) head.addView(kit.text(title, 13.5f, Palette.TEXT, bold = true), LayoutParams(0, -2, 1f))
+        else head.addView(View(kit.ctx), LayoutParams(0, 1, 1f))
         head.addView(label)
         addView(head, LayoutParams(-1, -2))
 
@@ -236,9 +243,10 @@ class Slider(
                 onPreview(this@Slider.value)
                 if (!fromUser && !dragging) onCommit(this@Slider.value)
             }
-            override fun onStartTrackingTouch(sb: SeekBar) { dragging = true }
+            override fun onStartTrackingTouch(sb: SeekBar) { dragging = true; onDrag(true) }
             override fun onStopTrackingTouch(sb: SeekBar) {
                 dragging = false
+                onDrag(false)
                 onCommit(this@Slider.value)
             }
         })
@@ -246,7 +254,7 @@ class Slider(
         val foot = LinearLayout(kit.ctx)
         foot.addView(kit.text(format(min), 11f, Palette.DIM).apply { fontFeatureSettings = "tnum" }, LayoutParams(0, -2, 1f))
         foot.addView(kit.text(format(max), 11f, Palette.DIM).apply { gravity = Gravity.END; fontFeatureSettings = "tnum" }, LayoutParams(0, -2, 1f))
-        addView(foot, LayoutParams(-1, -2).apply { marginStart = kit.dp(2); marginEnd = kit.dp(2) })
+        if (showRange) addView(foot, LayoutParams(-1, -2).apply { marginStart = kit.dp(2); marginEnd = kit.dp(2) })
     }
 
     /** Greys the slider out and ignores touches (e.g. a setting that cannot change right now). */

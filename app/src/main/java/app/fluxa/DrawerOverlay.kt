@@ -1,6 +1,7 @@
 package app.fluxa
 
 import android.content.Context
+import android.content.res.ColorStateList
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -27,9 +28,10 @@ import kotlin.math.min
 
 /**
  * Settings drawer drawn above the game as accessibility overlays.
- *  - a thin invisible-ish strip on the right edge: swipe right -> left opens the drawer
- *  - the drawer itself (dim scrim + panel): live multiplier / quality / on-off / stop
- * Tapping the dim area or swiping the panel to the right closes it.
+ *  - a thin strip on the right edge: swipe right -> left opens the drawer
+ *  - the drawer: header with live fps, four tabs (frames / picture / colour / HUD), pinned stop button
+ * Dragging any slider fades the drawer out so the change can be judged on the live game; it comes
+ * back on release. Tapping the dim area, the X, or swiping the header to the right closes it.
  */
 class DrawerOverlay(
     private val host: Context,
@@ -54,6 +56,8 @@ class DrawerOverlay(
     private var edge: View? = null
     private var scrim: FrameLayout? = null
     private var panel: View? = null
+    private var dim: View? = null
+    private var tab = 0
     private var statsText: TextView? = null
     private var hud: View? = null
     private var hudText: TextView? = null
@@ -161,6 +165,7 @@ class DrawerOverlay(
         scrim?.let { runCatching { wm.removeViewImmediate(it) } }
         scrim = null
         panel = null
+        dim = null
         statsText = null
         edge?.let { runCatching { wm.removeViewImmediate(it) } }
         edge = null
@@ -172,39 +177,21 @@ class DrawerOverlay(
 
     // ---------------------------------------------------------------- drawer
 
+    // ---------------------------------------------------------------- drawer
+
     private fun show() {
         if (open) return
         open = true
 
-        val root = FrameLayout(ctx).apply {
-            setBackgroundColor(0x80000000.toInt())
+        val root = FrameLayout(ctx)
+        val dimView = View(ctx).apply {
+            setBackgroundColor(0x66000000)
             setOnClickListener { hide() }
         }
-        val content = buildPanelContent()
-        val panelWidth = minOf(dp(300), (screenW * 0.75f).toInt())
-        val scroll = ScrollView(ctx).apply {
-            isVerticalScrollBarEnabled = false
-            background = GradientDrawable().apply {
-                setColor(0xF51A1C20.toInt())
-                setStroke(dp(1), 0x33FFFFFF)
-                cornerRadii = floatArrayOf(dp(24).toFloat(), dp(24).toFloat(), 0f, 0f, 0f, 0f, dp(24).toFloat(), dp(24).toFloat())
-            }
-            setOnClickListener { } // swallow taps so they don't close the drawer
-            addView(content)
-        }
-        // swipe the panel to the right to close
-        var downX = 0f
-        scroll.setOnTouchListener { _, e ->
-            when (e.actionMasked) {
-                MotionEvent.ACTION_DOWN -> downX = e.rawX
-                MotionEvent.ACTION_MOVE -> if (e.rawX - downX > dp(80)) {
-                    downX = Float.MAX_VALUE
-                    hide()
-                }
-            }
-            false
-        }
-        root.addView(scroll, FrameLayout.LayoutParams(panelWidth, FrameLayout.LayoutParams.MATCH_PARENT, Gravity.END))
+        root.addView(dimView, FrameLayout.LayoutParams(-1, -1))
+        val panelWidth = minOf(dp(340), (screenW * 0.8f).toInt())
+        val card = buildPanel()
+        root.addView(card, FrameLayout.LayoutParams(panelWidth, FrameLayout.LayoutParams.MATCH_PARENT, Gravity.END))
 
         val lp = WindowManager.LayoutParams(
             screenW,
@@ -218,18 +205,20 @@ class DrawerOverlay(
         lp.gravity = Gravity.TOP or Gravity.START
         lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
         scrim = root
-        panel = scroll
+        panel = card
+        dim = dimView
         if (runCatching { wm.addView(root, lp) }.isFailure) {
             scrim = null
             panel = null
+            dim = null
             open = false
             return
         }
 
-        scroll.translationX = panelWidth.toFloat()
+        card.translationX = panelWidth.toFloat()
         root.alpha = 0f
         root.animate().alpha(1f).setDuration(160).start()
-        scroll.animate().translationX(0f).setDuration(200).start()
+        card.animate().translationX(0f).setDuration(200).start()
     }
 
     private fun hide() {
@@ -244,9 +233,16 @@ class DrawerOverlay(
                 runCatching { wm.removeViewImmediate(root) }
                 scrim = null
                 panel = null
+                dim = null
                 statsText = null
             }
         }.start()
+    }
+
+    /** While a slider is held the drawer and scrim fade out, so the game underneath shows the change. */
+    private fun peek(on: Boolean) {
+        panel?.animate()?.alpha(if (on) 0.14f else 1f)?.setDuration(120)?.start()
+        dim?.animate()?.alpha(if (on) 0f else 1f)?.setDuration(120)?.start()
     }
 
     private val ticker = object : Runnable {
@@ -369,197 +365,279 @@ class DrawerOverlay(
             if (bold) setTypeface(null, Typeface.BOLD)
         }
 
-    private fun buildPanelContent(): LinearLayout {
-        val box = LinearLayout(ctx).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(22), dp(18), dp(22))
-        }
-        val head = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
-        head.addView(View(ctx).apply {
-            background = kit.gradient(intArrayOf(Palette.AMBER, Palette.EMBER, Palette.RUST), 3, GradientDrawable.Orientation.TOP_BOTTOM)
-        }, LinearLayout.LayoutParams(dp(4), dp(26)).apply { marginEnd = dp(10) })
-        head.addView(text(appName, 20f, bold = true))
-        box.addView(head)
+    private val tabNames = listOf("เฟรม", "ภาพ", "สี", "HUD")
 
-        statsText = text("กำลังวัด fps…", 13f, color = Palette.AMBER, bold = true).apply {
-            setPadding(dp(12), dp(7), dp(12), dp(7))
+    private fun lp(w: Int = -1, h: Int = -2) = LinearLayout.LayoutParams(w, h)
+
+    private fun buildPanel(): LinearLayout {
+        val r = dp(22).toFloat()
+        val card = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable().apply {
+                setColor(0xF4181A1E.toInt())
+                setStroke(dp(1), 0x33FFFFFF)
+                cornerRadii = floatArrayOf(r, r, 0f, 0f, 0f, 0f, r, r)
+            }
+            isClickable = true // swallow taps so they don't reach the scrim
+        }
+
+        // ---- header: title, close, live stats (swipe right on it to close)
+        val header = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(20), dp(8), dp(10))
+        }
+        val titleRow = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
+        titleRow.addView(View(ctx).apply {
+            background = kit.gradient(intArrayOf(Palette.AMBER, Palette.EMBER, Palette.RUST), 3, GradientDrawable.Orientation.TOP_BOTTOM)
+        }, lp(dp(4), dp(22)).apply { marginEnd = dp(10) })
+        titleRow.addView(text(appName, 19f, bold = true), lp(0, -2).apply { weight = 1f })
+        titleRow.addView(text("✕", 17f, color = Palette.MUTED).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(14), dp(8), dp(14), dp(8))
+            setOnClickListener { hide() }
+        })
+        header.addView(titleRow)
+        statsText = text("กำลังวัด fps…", 12.5f, color = Palette.AMBER, bold = true).apply {
+            setPadding(dp(11), dp(6), dp(11), dp(6))
             background = kit.rounded(0x1AFFA63D, 10, 0x44FFA63D, 1)
         }
-        box.addView(statsText, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(12); bottomMargin = dp(8) })
-
-        // hud toggle
-        val hudRow = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
-        hudRow.addView(text("แสดง fps + ความละเอียด บนจอ (เข้า/ออก)", 15f), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        hudRow.addView(Switch(ctx).apply {
-            isChecked = hudEnabled
-            setOnCheckedChangeListener { _, on ->
-                hudEnabled = on
-                prefs.edit().putBoolean("hud", on).apply()
-                hud?.visibility = if (on) View.VISIBLE else View.GONE
+        header.addView(statsText, lp(-2, -2).apply { topMargin = dp(10) })
+        var downX = 0f
+        header.setOnTouchListener { _, e ->
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> downX = e.rawX
+                MotionEvent.ACTION_MOVE -> if (e.rawX - downX > dp(70)) {
+                    downX = Float.MAX_VALUE
+                    hide()
+                }
             }
-        })
-        box.addView(hudRow, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT,
-        ).apply { topMargin = dp(10) })
+            true
+        }
+        card.addView(header)
 
-        // frametime graph under the hud counter
-        val graphRow = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
-        graphRow.addView(text("แสดงกราฟ frametime บน HUD", 15f), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        graphRow.addView(Switch(ctx).apply {
-            isChecked = hudGraphEnabled
-            setOnCheckedChangeListener { _, on ->
-                hudGraphEnabled = on
-                prefs.edit().putBoolean("hud_graph", on).apply()
-                updateGraph()
+        // ---- tabs
+        val page = ScrollView(ctx).apply { isVerticalScrollBarEnabled = false }
+        val tabViews = ArrayList<Pair<TextView, View>>()
+        fun paintTabs() = tabViews.forEachIndexed { i, (label, bar) ->
+            val on = i == tab
+            label.setTextColor(if (on) Palette.AMBER else Palette.MUTED)
+            bar.setBackgroundColor(if (on) Palette.AMBER else 0)
+        }
+        fun openTab(i: Int) {
+            tab = i
+            paintTabs()
+            page.removeAllViews()
+            page.addView(buildPage(i))
+            page.scrollTo(0, 0)
+        }
+        val tabRow = LinearLayout(ctx).apply { setPadding(dp(10), 0, dp(10), 0) }
+        tabNames.forEachIndexed { i, name ->
+            val label = text(name, 14f, bold = true).apply {
+                gravity = Gravity.CENTER
+                setPadding(0, dp(10), 0, dp(10))
             }
-        })
-        box.addView(graphRow, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT,
-        ).apply { topMargin = dp(10) })
-
-        // hud in recorded video
-        val hudVideoRow = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
-        hudVideoRow.addView(text("ใส่ HUD ลงในวิดีโอที่อัด", 15f), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        hudVideoRow.addView(Switch(ctx).apply {
-            isChecked = hudInVideo
-            setOnCheckedChangeListener { _, on ->
-                hudInVideo = on
-                prefs.edit().putBoolean("hud_rec", on).apply()
-                updateVideoHud()
+            val bar = View(ctx)
+            val cell = LinearLayout(ctx).apply {
+                orientation = LinearLayout.VERTICAL
+                setOnClickListener { openTab(i) }
+                addView(label, lp())
+                addView(bar, lp(-1, dp(2)).apply { marginStart = dp(12); marginEnd = dp(12) })
             }
-        })
-        box.addView(hudVideoRow, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT,
-        ).apply { topMargin = dp(10) })
+            tabViews.add(label to bar)
+            tabRow.addView(cell, lp(0, -2).apply { weight = 1f })
+        }
+        card.addView(tabRow)
+        card.addView(View(ctx).apply { setBackgroundColor(0x22FFFFFF) }, lp(-1, dp(1)))
 
-        // frame multiplier
-        box.addView(text("ตัวคูณเฟรม", 13f, color = Palette.MUTED).apply { setPadding(0, dp(16), 0, dp(6)) })
-        box.addView(Slider(
-            kit, FluxaOptions.MIN_MULTIPLIER, FluxaOptions.MAX_MULTIPLIER,
+        card.addView(page, lp(-1, 0).apply { weight = 1f })
+        openTab(tab.coerceIn(0, tabNames.size - 1))
+
+        // ---- footer: stop, always reachable
+        val footer = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(10), dp(16), dp(14))
+        }
+        footer.addView(
+            text("หยุด $appName", 15f, bold = true).apply {
+                gravity = Gravity.CENTER
+                setPadding(0, dp(12), 0, dp(12))
+                background = kit.rounded(0x33D64541, 12, 0x99D64541.toInt(), 1)
+                setTextColor(0xFFFF8A80.toInt())
+                setOnClickListener { onStop() }
+            },
+            lp(),
+        )
+        card.addView(View(ctx).apply { setBackgroundColor(0x22FFFFFF) }, lp(-1, dp(1)))
+        card.addView(footer)
+        return card
+    }
+
+    // ---- building blocks
+
+    private fun group(page: LinearLayout, title: String): LinearLayout = LinearLayout(ctx).apply {
+        orientation = LinearLayout.VERTICAL
+        background = kit.rounded(0xFF202328.toInt(), 14, 0xFF2C3036.toInt(), 1)
+        setPadding(dp(14), dp(12), dp(14), dp(16))
+        addView(text(title, 12f, bold = true, color = Palette.MUTED).apply { letterSpacing = 0.06f })
+        page.addView(this, lp().apply { topMargin = dp(12) })
+    }
+
+    private fun gap(g: LinearLayout, v: View, top: Int = 16) = g.addView(v, lp().apply { topMargin = dp(top) })
+
+    private fun slider(
+        g: LinearLayout, title: String, min: Int, max: Int, value: Int, step: Int = 1,
+        format: (Int) -> String = { it.toString() }, onCommit: (Int) -> Unit,
+    ): Slider = Slider(
+        kit, min, max, value, step = step, format = format,
+        title = title, showRange = false, onDrag = ::peek, onCommit = onCommit,
+    ).also { gap(g, it) }
+
+    private fun chips(
+        g: LinearLayout, title: String, labels: List<String>, selected: Int, perRow: Int = labels.size,
+        onPick: (Int) -> Boolean,
+    ): Segmented {
+        gap(g, text(title, 13.5f, bold = true))
+        val seg = Segmented(kit, labels, selected, perRow = perRow, textSp = 13f, onPick = onPick)
+        g.addView(seg, lp().apply { topMargin = dp(8) })
+        return seg
+    }
+
+    private fun toggle(g: LinearLayout, title: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+        val row = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
+        row.addView(text(title, 14f), lp(0, -2).apply { weight = 1f; marginEnd = dp(10) })
+        val states = arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf())
+        row.addView(Switch(ctx).apply {
+            isChecked = checked
+            thumbTintList = ColorStateList(states, intArrayOf(Palette.AMBER, 0xFF9AA0A8.toInt()))
+            trackTintList = ColorStateList(states, intArrayOf(0x66FFA83D, 0xFF3A3F46.toInt()))
+            setOnCheckedChangeListener { _, on -> onChange(on) }
+        })
+        gap(g, row, 12)
+    }
+
+    private fun note(g: LinearLayout, value: String) =
+        g.addView(text(value, 11.5f, color = Palette.DIM), lp().apply { topMargin = dp(8) })
+
+    // ---- pages
+
+    private fun buildPage(index: Int): LinearLayout {
+        val page = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(2), dp(14), dp(18))
+        }
+        when (index) {
+            0 -> framesPage(page)
+            1 -> picturePage(page)
+            2 -> colourPage(page)
+            else -> hudPage(page)
+        }
+        return page
+    }
+
+    private fun framesPage(page: LinearLayout) {
+        val g = group(page, "การสร้างเฟรม")
+        slider(
+            g, "ตัวคูณเฟรม", FluxaOptions.MIN_MULTIPLIER, FluxaOptions.MAX_MULTIPLIER,
             FluxaOptions.clampMultiplier(Fluxa.multiplier), format = FluxaOptions::multiplierLabel,
         ) { v ->
             Fluxa.reconfigure(v, Fluxa.flowSide)
             prefs.edit().putInt("ui_mult_x", v).apply()
             onSettingsChanged()
-        })
-
-        // quality = optical-flow resolution (short side, px)
-        box.addView(text("คุณภาพ (DIS flow)", 13f, color = Palette.MUTED).apply { setPadding(0, dp(16), 0, dp(6)) })
-        box.addView(Slider(
-            kit, FluxaOptions.MIN_FLOW_SIDE, FluxaOptions.MAX_FLOW_SIDE,
-            FluxaOptions.clampFlowSide(Fluxa.flowSide),
-            step = FluxaOptions.FLOW_SIDE_STEP, format = { "$it px" },
+        }
+        slider(
+            g, "คุณภาพ (DIS flow)", FluxaOptions.MIN_FLOW_SIDE, FluxaOptions.MAX_FLOW_SIDE,
+            FluxaOptions.clampFlowSide(Fluxa.flowSide), step = FluxaOptions.FLOW_SIDE_STEP, format = { "$it px" },
         ) { v ->
             Fluxa.reconfigure(Fluxa.multiplier, v)
             prefs.edit().putInt("ui_flow_side", v).apply()
             onSettingsChanged()
-        })
-
-        // present mode (FIFO / MAILBOX), switched live
-        box.addView(text("โหมดแสดงผล", 13f, color = Palette.MUTED).apply { setPadding(0, dp(16), 0, dp(6)) })
-        box.addView(chipRow(
-            listOf("FIFO", "MAILBOX"),
+        }
+        chips(
+            g, "โหมดแสดงผล", listOf("FIFO", "MAILBOX"),
             if (Fluxa.presentMode == FluxaOptions.PRESENT_MAILBOX) 1 else 0,
         ) { i ->
             Fluxa.setPresentMode(if (i == 1) FluxaOptions.PRESENT_MAILBOX else FluxaOptions.PRESENT_FIFO)
             prefs.edit().putInt("ui_present", i).apply()
             true
-        })
+        }
+    }
 
-        // upscale filter + sharpness, switched live (only matters while the output is upscaled)
-        val upCfg = DisplayTuner.config(host)
-        // output % (the upscale target size): committed on release, the presenter is rebuilt once
-        val outLocked = outputLocked() || !upCfg.upscale
-        box.addView(text("ความละเอียดเอาต์พุต (อัปสเกล %)", 13f, color = Palette.MUTED).apply { setPadding(0, dp(16), 0, dp(6)) })
-        box.addView(Slider(
-            kit, DisplayTuner.MIN_OUT_PERCENT, DisplayTuner.MAX_OUT_PERCENT, upCfg.outPercent,
+    private fun picturePage(page: LinearLayout) {
+        val cfg = DisplayTuner.config(host)
+        var upMode = cfg.upscaleFilter
+        var upSharp = cfg.upscaleSharp
+        var upSharpMethod = cfg.upscaleSharpMethod
+        fun applyUpscale() {
+            Fluxa.setUpscale(upMode, upSharp, upSharpMethod)
+            DisplayTuner.saveUpscale(host, upMode, upSharp, upSharpMethod)
+        }
+
+        val up = group(page, "อัปสเกล")
+        val outLocked = outputLocked() || !cfg.upscale
+        slider(
+            up, "ความละเอียดเอาต์พุต", DisplayTuner.MIN_OUT_PERCENT, DisplayTuner.MAX_OUT_PERCENT, cfg.outPercent,
             step = DisplayTuner.OUT_PERCENT_STEP, format = { "$it%" },
         ) { v ->
             if (v != DisplayTuner.config(host).outPercent) {
                 DisplayTuner.saveOutPercent(host, v)
                 onOutputPercentChanged()
             }
-        }.also { it.setLocked(outLocked) })
+        }.setLocked(outLocked)
         if (outLocked) {
-            box.addView(text(
-                if (!upCfg.upscale) "ปิดอัปสเกลอยู่ (เปิดได้ในหน้าแอป)" else "ล็อกระหว่างอัดจอ (วิดีโอขนาดคงที่)",
-                11f, color = Palette.DIM,
-            ).apply { setPadding(0, dp(4), 0, 0) })
+            note(up, if (!cfg.upscale) "ปิดอัปสเกลอยู่ (เปิดได้ในหน้าแอป)" else "ล็อกระหว่างอัดจอ (วิดีโอขนาดคงที่)")
         }
-        var upMode = upCfg.upscaleFilter
-        var upSharp = upCfg.upscaleSharp
-        var upSharpMethod = upCfg.upscaleSharpMethod
         val upModes = DisplayTuner.upscaleModes(host)
-        box.addView(text("ฟิลเตอร์อัปสเกล (ใช้เมื่ออัปสเกลอยู่)", 13f, color = Palette.MUTED).apply { setPadding(0, dp(16), 0, dp(6)) })
-        box.addView(chipRow(
-            upModes.map { it.second },
-            upModes.indexOfFirst { it.first == upMode }.coerceAtLeast(0),
-            perRow = 3,
-        ) { i ->
+        chips(up, "ฟิลเตอร์", upModes.map { it.second }, upModes.indexOfFirst { it.first == upMode }.coerceAtLeast(0), perRow = 3) { i ->
             upMode = upModes[i].first
-            Fluxa.setUpscale(upMode, upSharp, upSharpMethod)
-            DisplayTuner.saveUpscale(host, upMode, upSharp, upSharpMethod)
+            applyUpscale()
             true
-        })
-        box.addView(text("ความคมหลังอัปสเกล", 13f, color = Palette.MUTED).apply { setPadding(0, dp(16), 0, dp(6)) })
-        box.addView(Slider(
-            kit, 0, DisplayTuner.STRENGTH_MAX, upSharp, step = 5, format = { if (it == 0) "ปิด" else "$it%" },
-        ) { v ->
+        }
+        slider(up, "ความคมหลังอัปสเกล", 0, DisplayTuner.STRENGTH_MAX, upSharp, step = 5, format = { if (it == 0) "ปิด" else "$it%" }) { v ->
             upSharp = v
-            Fluxa.setUpscale(upMode, upSharp, upSharpMethod)
-            DisplayTuner.saveUpscale(host, upMode, upSharp, upSharpMethod)
-        })
-        box.addView(text("วิธีเพิ่มความคม", 13f, color = Palette.MUTED).apply { setPadding(0, dp(16), 0, dp(6)) })
-        box.addView(chipRow(
-            DisplayTuner.sharpMethods.map { it.second },
+            applyUpscale()
+        }
+        chips(
+            up, "วิธีเพิ่มความคม", DisplayTuner.sharpMethods.map { it.second },
             DisplayTuner.sharpMethods.indexOfFirst { it.first == upSharpMethod }.coerceAtLeast(0),
         ) { i ->
             upSharpMethod = DisplayTuner.sharpMethods[i].first
-            Fluxa.setUpscale(upMode, upSharp, upSharpMethod)
-            DisplayTuner.saveUpscale(host, upMode, upSharp, upSharpMethod)
+            applyUpscale()
             true
-        })
+        }
+        note(up, "ฟิลเตอร์และความคมใช้เมื่ออัปสเกลอยู่")
 
-        // deband / denoise / anti-aliasing / dither, switched live (they also run without upscaling)
-        var enDeband = upCfg.deband
-        var enDenoise = upCfg.denoise
-        var enAa = upCfg.aa
-        var enDither = upCfg.dither
+        var enDeband = cfg.deband
+        var enDenoise = cfg.denoise
+        var enAa = cfg.aa
+        var enDither = cfg.dither
         fun applyEnhance() {
             Fluxa.setEnhance(enDeband, enDenoise, enAa, enDither)
             DisplayTuner.saveEnhance(host, enDeband, enDenoise, enAa, enDither)
         }
-        box.addView(text("ลดสัญญาณรบกวน/บล็อก (Denoise/Deblock)", 13f, color = Palette.MUTED).apply { setPadding(0, dp(16), 0, dp(6)) })
-        box.addView(Slider(
-            kit, 0, DisplayTuner.STRENGTH_MAX, enDenoise, step = 5, format = { if (it == 0) "ปิด" else "$it%" },
-        ) { v ->
+        val fx = group(page, "ปรับคุณภาพภาพ")
+        slider(fx, "ลดสัญญาณรบกวน/บล็อก", 0, DisplayTuner.STRENGTH_MAX, enDenoise, step = 5, format = { if (it == 0) "ปิด" else "$it%" }) { v ->
             enDenoise = v
             applyEnhance()
-        })
-        box.addView(text("ลดฟันปลา (Anti-aliasing)", 13f, color = Palette.MUTED).apply { setPadding(0, dp(16), 0, dp(6)) })
-        box.addView(chipRow(
-            DisplayTuner.aaModes.map { it.second },
+        }
+        chips(
+            fx, "ลดฟันปลา (Anti-aliasing)", DisplayTuner.aaModes.map { it.second },
             DisplayTuner.aaModes.indexOfFirst { it.first == enAa }.coerceAtLeast(0),
         ) { i ->
             enAa = DisplayTuner.aaModes[i].first
             applyEnhance()
             true
-        })
-        box.addView(text("ลดแถบสี (Deband)", 13f, color = Palette.MUTED).apply { setPadding(0, dp(16), 0, dp(6)) })
-        box.addView(Slider(
-            kit, 0, DisplayTuner.STRENGTH_MAX, enDeband, step = 5, format = { if (it == 0) "ปิด" else "$it%" },
-        ) { v ->
+        }
+        slider(fx, "ลดแถบสี (Deband)", 0, DisplayTuner.STRENGTH_MAX, enDeband, step = 5, format = { if (it == 0) "ปิด" else "$it%" }) { v ->
             enDeband = v
             applyEnhance()
-        })
-        box.addView(text("Dither", 13f, color = Palette.MUTED).apply { setPadding(0, dp(16), 0, dp(6)) })
-        box.addView(chipRow(listOf("ปิด", "เปิด"), if (enDither) 1 else 0) { i ->
-            enDither = i == 1
+        }
+        toggle(fx, "Dither", enDither) { on ->
+            enDither = on
             applyEnhance()
-            true
-        })
+        }
+    }
 
-        // film grain + colour grade, switched live (they also run without upscaling)
+    private fun colourPage(page: LinearLayout) {
         var look = DisplayTuner.look(host)
         val lookSliders = ArrayList<Pair<Slider, (DisplayTuner.Look) -> Int>>()
         fun applyLook() {
@@ -568,29 +646,30 @@ class DrawerOverlay(
         }
         fun signed(v: Int) = if (v > 0) "+$v" else "$v"
         fun lookSlider(
-            label: String, min: Int, max: Int, read: (DisplayTuner.Look) -> Int,
+            g: LinearLayout, label: String, min: Int, max: Int, read: (DisplayTuner.Look) -> Int,
             format: (Int) -> String, write: (DisplayTuner.Look, Int) -> DisplayTuner.Look,
         ) {
-            box.addView(text(label, 13f, color = Palette.MUTED).apply { setPadding(0, dp(16), 0, dp(6)) })
-            val slider = Slider(kit, min, max, read(look), step = if (max - min > 10) 5 else 1, format = format) { v ->
+            val s = slider(g, label, min, max, read(look), step = if (max - min > 10) 5 else 1, format = format) { v ->
                 look = write(look, v)
                 applyLook()
             }
-            lookSliders.add(slider to read)
-            box.addView(slider)
+            lookSliders.add(s to read)
         }
-        box.addView(text("ฟิล์มเกรน (Film grain)", 13f, color = Palette.MUTED).apply { setPadding(0, dp(22), 0, dp(0)) })
-        lookSlider("ปริมาณเกรน", 0, DisplayTuner.GRAIN_MAX, { it.grain }, { if (it == 0) "ปิด" else "$it%" }) { l, v -> l.copy(grain = v) }
-        lookSlider("ขนาดเกรน", DisplayTuner.GRAIN_SIZE_MIN, DisplayTuner.GRAIN_SIZE_MAX, { it.grainSize }, { "$it" }) { l, v -> l.copy(grainSize = v) }
-        box.addView(text("ปรับสี (Color)", 13f, color = Palette.MUTED).apply { setPadding(0, dp(22), 0, dp(0)) })
+
         val gr = DisplayTuner.GRADE_RANGE
-        lookSlider("ความสว่าง (Brightness)", -gr, gr, { it.brightness }, ::signed) { l, v -> l.copy(brightness = v) }
-        lookSlider("คอนทราสต์ (Contrast)", -gr, gr, { it.contrast }, ::signed) { l, v -> l.copy(contrast = v) }
-        lookSlider("ความอิ่มสี (Saturation)", -gr, gr, { it.saturation }, ::signed) { l, v -> l.copy(saturation = v) }
-        lookSlider("Vibrance (เร่งสีที่จืด)", -gr, gr, { it.vibrance }, ::signed) { l, v -> l.copy(vibrance = v) }
-        lookSlider("อุณหภูมิสี (เย็น ↔ อุ่น)", -gr, gr, { it.temperature }, ::signed) { l, v -> l.copy(temperature = v) }
-        lookSlider("Tint (เขียว ↔ ม่วงแดง)", -gr, gr, { it.tint }, ::signed) { l, v -> l.copy(tint = v) }
-        box.addView(
+        val color = group(page, "ปรับสี")
+        lookSlider(color, "ความสว่าง", -gr, gr, { it.brightness }, ::signed) { l, v -> l.copy(brightness = v) }
+        lookSlider(color, "คอนทราสต์", -gr, gr, { it.contrast }, ::signed) { l, v -> l.copy(contrast = v) }
+        lookSlider(color, "ความอิ่มสี", -gr, gr, { it.saturation }, ::signed) { l, v -> l.copy(saturation = v) }
+        lookSlider(color, "Vibrance (เร่งสีที่จืด)", -gr, gr, { it.vibrance }, ::signed) { l, v -> l.copy(vibrance = v) }
+        lookSlider(color, "อุณหภูมิสี (เย็น ↔ อุ่น)", -gr, gr, { it.temperature }, ::signed) { l, v -> l.copy(temperature = v) }
+        lookSlider(color, "Tint (เขียว ↔ ม่วงแดง)", -gr, gr, { it.tint }, ::signed) { l, v -> l.copy(tint = v) }
+
+        val grain = group(page, "ฟิล์มเกรน")
+        lookSlider(grain, "ปริมาณเกรน", 0, DisplayTuner.GRAIN_MAX, { it.grain }, { if (it == 0) "ปิด" else "$it%" }) { l, v -> l.copy(grain = v) }
+        lookSlider(grain, "ขนาดเกรน", DisplayTuner.GRAIN_SIZE_MIN, DisplayTuner.GRAIN_SIZE_MAX, { it.grainSize }, { "$it" }) { l, v -> l.copy(grainSize = v) }
+
+        page.addView(
             text("รีเซ็ตสี/เกรน", 14f, bold = true, color = Palette.AMBER).apply {
                 gravity = Gravity.CENTER
                 setPadding(0, dp(12), 0, dp(12))
@@ -601,28 +680,26 @@ class DrawerOverlay(
                     applyLook()
                 }
             },
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dp(16) },
+            lp().apply { topMargin = dp(14) },
         )
-
-        // stop
-        val stop = text("หยุด $appName", 16f, bold = true).apply {
-            gravity = Gravity.CENTER
-            setPadding(0, dp(14), 0, dp(14))
-            background = kit.rounded(0xFFD64541.toInt(), 12)
-            setOnClickListener { onStop() }
-        }
-        box.addView(stop, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT,
-        ).apply { topMargin = dp(26) })
-
-        box.addView(text("ปัดไปทางขวาหรือแตะข้างนอกเพื่อปิด", 11f, color = Palette.DIM)
-            .apply { gravity = Gravity.CENTER; setPadding(0, dp(12), 0, 0) })
-        return box
     }
 
-    private fun chipRow(
-        labels: List<String>, selected: Int, perRow: Int = labels.size, onPick: (Int) -> Boolean,
-    ): Segmented = Segmented(kit, labels, selected, perRow = perRow, textSp = 13.5f, onPick = onPick)
+    private fun hudPage(page: LinearLayout) {
+        val g = group(page, "HUD")
+        toggle(g, "แสดง fps + ความละเอียด บนจอ (เข้า/ออก)", hudEnabled) { on ->
+            hudEnabled = on
+            prefs.edit().putBoolean("hud", on).apply()
+            hud?.visibility = if (on) View.VISIBLE else View.GONE
+        }
+        toggle(g, "แสดงกราฟ frametime บน HUD", hudGraphEnabled) { on ->
+            hudGraphEnabled = on
+            prefs.edit().putBoolean("hud_graph", on).apply()
+            updateGraph()
+        }
+        toggle(g, "ใส่ HUD ลงในวิดีโอที่อัด", hudInVideo) { on ->
+            hudInVideo = on
+            prefs.edit().putBoolean("hud_rec", on).apply()
+            updateVideoHud()
+        }
+    }
 }

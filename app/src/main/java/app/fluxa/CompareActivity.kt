@@ -37,6 +37,10 @@ import kotlin.math.roundToInt
  * would draw), then upscaled to "output %" by the presenter's own upscaler (same shaders, run on a
  * still). Left of the divider = the low-res frame, right = the upscaled result. Every change is
  * saved to the same settings the session uses, so the choice made by eye carries over.
+ *
+ * Layout: an edge-to-edge viewer with floating controls (back, pick image, test pattern, reset
+ * zoom, before / split / after switch, live info chip) and a tabbed settings panel (upscale /
+ * effects / colour) under it (beside it in landscape), styled like the in-game drawer.
  */
 class CompareActivity : Activity() {
     private lateinit var kit: Kit
@@ -70,6 +74,9 @@ class CompareActivity : Activity() {
     private var vulkanOk = true
     private var loading = false
     private var restoring = true
+    private var tab = 0
+
+    private fun lp(w: Int = -1, h: Int = -2) = LinearLayout.LayoutParams(w, h)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -93,185 +100,114 @@ class CompareActivity : Activity() {
             }
         }
 
-        // ---- header
-        val header = LinearLayout(kit.ctx).apply {
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(kit.dp(16), kit.dp(10), kit.dp(16), kit.dp(8))
-        }
-        header.addView(
-            kit.text("‹ กลับ", 15f, Palette.AMBER, bold = true).apply {
-                setPadding(0, kit.dp(6), kit.dp(14), kit.dp(6))
-                setOnClickListener { finish() }
-            },
-        )
-        header.addView(
-            kit.text("เทียบภาพ ก่อน / หลังอัปสเกล", 15f, Palette.TEXT, bold = true),
-            LinearLayout.LayoutParams(0, -2, 1f),
-        )
-        page.addView(header, LinearLayout.LayoutParams(-1, -2))
-
-        // ---- viewer + hint
+        // ---- viewer with floating controls
         view = CompareView(kit.ctx, kit)
-        val viewer = LinearLayout(kit.ctx).apply { orientation = LinearLayout.VERTICAL }
-        viewer.addView(view, LinearLayout.LayoutParams(-1, 0, 1f))
-        viewer.addView(
-            kit.text("ลากเส้นแบ่งเพื่อเลื่อน · บีบนิ้วซูม · ลากเพื่อเลื่อนภาพ · แตะสองครั้งรีเซ็ต", 11f, Palette.DIM)
-                .apply { gravity = Gravity.CENTER; setPadding(kit.dp(8), kit.dp(6), kit.dp(8), kit.dp(6)) },
-            LinearLayout.LayoutParams(-1, -2),
-        )
+        val viewer = FrameLayout(kit.ctx)
+        viewer.addView(view, FrameLayout.LayoutParams(-1, -1))
 
-        // ---- controls
-        val card = kit.card("ตั้งค่าอัปสเกล", Palette.EMBER)
-        info = kit.text("", 12f, Palette.AMBER, bold = true)
-        card.addView(info)
+        fun pillBtn(label: String, color: Int = Palette.TEXT, onClick: () -> Unit) =
+            kit.text(label, 13f, color, bold = true).apply {
+                gravity = Gravity.CENTER
+                setPadding(kit.dp(12), kit.dp(8), kit.dp(12), kit.dp(8))
+                background = kit.rounded(0xB3101215.toInt(), 16, 0x33FFFFFF, 1)
+                setOnClickListener { onClick() }
+            }
 
-        card.addView(kit.caption("ฟิลเตอร์อัปสเกล"))
-        modeBox = FrameLayout(kit.ctx)
-        buildModeSeg()
-        card.addView(modeBox)
-
-        sharpSlider = Slider(
-            kit, 0, DisplayTuner.STRENGTH_MAX, cfg.upscaleSharp, step = 5, format = { if (it == 0) "ปิด" else "$it%" },
-            onPreview = { if (!restoring) { prefs.edit().putInt(DisplayTuner.K_UPSCALE_SHARP, it).apply(); schedule() } },
-        ) { prefs.edit().putInt(DisplayTuner.K_UPSCALE_SHARP, it).apply() }
-        card.addView(kit.caption("ความคมหลังอัปสเกล"))
-        card.addView(sharpSlider)
-
-        methodSeg = Segmented(
-            kit, DisplayTuner.sharpMethods.map { it.second },
-            DisplayTuner.sharpMethods.indexOfFirst { it.first == cfg.upscaleSharpMethod }.coerceAtLeast(0),
-            textSp = 13f,
-        ) { i ->
-            prefs.edit().putInt(DisplayTuner.K_UPSCALE_SHARP_METHOD, DisplayTuner.sharpMethods[i].first).apply()
-            schedule()
+        val top = LinearLayout(kit.ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(kit.dp(10), kit.dp(10), kit.dp(10), 0)
+        }
+        val row1 = LinearLayout(kit.ctx).apply { gravity = Gravity.CENTER_VERTICAL }
+        row1.addView(pillBtn("‹ กลับ", Palette.AMBER) { finish() })
+        row1.addView(View(kit.ctx), lp(0, 1).apply { weight = 1f })
+        row1.addView(pillBtn("เลือกภาพ", Palette.AMBER) { pickImage() })
+        row1.addView(pillBtn("ภาพทดสอบ") {
+            prefs.edit().remove(KEY_URI).apply()
+            loadSource()
+        }, lp(-2, -2).apply { marginStart = kit.dp(6) })
+        row1.addView(pillBtn("⤢") { view.resetZoom() }, lp(-2, -2).apply { marginStart = kit.dp(6) })
+        top.addView(row1)
+        // what is shown: only the "before", the split, or only the "after"
+        val showSeg = Segmented(kit, listOf("ก่อน", "แบ่งครึ่ง", "หลัง"), 1, textSp = 12.5f) { i ->
+            view.setSplit(when (i) { 0 -> 1f; 2 -> 0f; else -> 0.5f })
             true
         }
-        card.addView(kit.caption("วิธีเพิ่มความคม"))
-        card.addView(methodSeg)
+        showSeg.background = kit.rounded(0xB3101215.toInt(), 14, 0x33FFFFFF, 1)
+        showSeg.setPadding(kit.dp(4), kit.dp(4), kit.dp(4), kit.dp(4))
+        top.addView(showSeg, lp(kit.dp(230), -2).apply { topMargin = kit.dp(8) })
+        viewer.addView(top, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
 
-        percentSlider = Slider(
-            kit, DisplayTuner.MIN_PERCENT, DisplayTuner.MAX_PERCENT, cfg.percent,
-            step = DisplayTuner.PERCENT_STEP, format = { "$it%" },
-            onPreview = { if (!restoring) { prefs.edit().putInt(DisplayTuner.K_PERCENT, it).apply(); schedule() } },
-        ) { prefs.edit().putInt(DisplayTuner.K_PERCENT, it).apply() }
-        card.addView(kit.caption("ความละเอียดที่เรนเดอร์ (% ของภาพเต็ม)"))
-        card.addView(percentSlider)
-
-        outSlider = Slider(
-            kit, DisplayTuner.MIN_OUT_PERCENT, DisplayTuner.MAX_OUT_PERCENT, cfg.outPercent,
-            step = DisplayTuner.OUT_PERCENT_STEP, format = { "$it%" },
-            onPreview = { if (!restoring) { prefs.edit().putInt(DisplayTuner.K_OUT_PERCENT, it).apply(); schedule() } },
-        ) { prefs.edit().putInt(DisplayTuner.K_OUT_PERCENT, it).apply() }
-        card.addView(kit.caption("ความละเอียดเอาต์พุต (% ของภาพเต็ม)"))
-        card.addView(outSlider)
-
-        fun action(label: String, color: Int, onClick: () -> Unit) = kit.text(label, 13.5f, color, bold = true).apply {
-            gravity = Gravity.CENTER
-            setPadding(kit.dp(6), kit.dp(12), kit.dp(6), kit.dp(12))
-            background = kit.rounded(Palette.SURFACE_HI, 14, Palette.STROKE, 1)
-            setOnClickListener { onClick() }
+        info = kit.text("", 12f, Palette.AMBER, bold = true).apply {
+            setPadding(kit.dp(10), kit.dp(6), kit.dp(10), kit.dp(6))
+            background = kit.rounded(0xB3101215.toInt(), 10, 0x44FFA63D, 1)
+            visibility = View.GONE
         }
-        val row = LinearLayout(kit.ctx).apply { setPadding(0, kit.dp(16), 0, 0) }
-        row.addView(action("เลือกภาพ", Palette.AMBER) { pickImage() }, LinearLayout.LayoutParams(0, -2, 1f))
-        row.addView(
-            action("ภาพทดสอบ", Palette.TEXT) {
-                prefs.edit().remove(KEY_URI).apply()
-                loadSource()
-            },
-            LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = kit.dp(8) },
-        )
-        row.addView(
-            action("รีเซ็ตซูม", Palette.TEXT) { view.resetZoom() },
-            LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = kit.dp(8) },
-        )
-        card.addView(row)
-        card.addView(
-            kit.text(
-                "ค่าที่เลือกบันทึกให้อัตโนมัติ · ใช้ค่าเดียวกับตอนรันจริง (โหมด/ความคม/เอฟเฟกต์/สี/เกรน/% เรนเดอร์/% เอาต์พุต) · " +
-                    "ภาพเต็ม = ภาพที่เลือก (ย่อให้ด้านยาวไม่เกิน $MAX_SIDE px)",
-                11.5f, Palette.DIM,
-            ).apply { setPadding(0, kit.dp(12), 0, 0) },
-        )
-
-
-        // ---- every other post-processing control the live session has (same prefs keys)
-        val fx = kit.card("เอฟเฟกต์ภาพ · สี · เกรน", Palette.EMBER)
-        fun liveSlider(
-            caption: String, key: String, min: Int, max: Int, init: Int, step: Int = 5,
-            format: (Int) -> String,
-        ): Slider {
-            val sl = Slider(
-                kit, min, max, init, step = step, format = format,
-                onPreview = { if (!restoring) { prefs.edit().putInt(key, it).apply(); schedule() } },
-            ) { prefs.edit().putInt(key, it).apply() }
-            fx.addView(kit.caption(caption))
-            fx.addView(sl)
-            return sl
-        }
-        val strength: (Int) -> String = { if (it == 0) "ปิด" else "$it%" }
-        val signed: (Int) -> String = { if (it > 0) "+$it" else "$it" }
-        val g = DisplayTuner.GRADE_RANGE
-
-        denoiseSlider = liveSlider("ลดสัญญาณรบกวน/บล็อก (Denoise) · ก่อนอัปสเกล", DisplayTuner.K_ENH_DENOISE,
-            0, DisplayTuner.STRENGTH_MAX, cfg.denoise, format = strength)
-
-        aaSeg = Segmented(
-            kit, DisplayTuner.aaModes.map { it.second },
-            DisplayTuner.aaModes.indexOfFirst { it.first == cfg.aa }.coerceAtLeast(0), textSp = 13f,
-        ) { i ->
-            prefs.edit().putInt(DisplayTuner.K_ENH_AA, DisplayTuner.aaModes[i].first).apply()
-            schedule()
-            true
-        }
-        fx.addView(kit.caption("ลดฟันปลา (Anti-aliasing) · ก่อนอัปสเกล"))
-        fx.addView(aaSeg)
-
-        debandSlider = liveSlider("ลดแถบสี (Deband) · ท้ายสุดที่ขนาดเอาต์พุต", DisplayTuner.K_ENH_DEBAND,
-            0, DisplayTuner.STRENGTH_MAX, cfg.deband, format = strength)
-
-        ditherSeg = Segmented(kit, listOf("ปิด", "เปิด"), if (cfg.dither) 1 else 0, textSp = 13f) { i ->
-            prefs.edit().putBoolean(DisplayTuner.K_ENH_DITHER, i == 1).apply()
-            schedule()
-            true
-        }
-        fx.addView(kit.caption("Dither · เติมนอยส์ละเอียดก่อนลงค่า 8-bit"))
-        fx.addView(ditherSeg)
-
-        grainSlider = liveSlider("ฟิล์มเกรน (Film grain)", DisplayTuner.K_LOOK_GRAIN,
-            0, DisplayTuner.GRAIN_MAX, cfg.grain, format = strength)
-        grainSizeSlider = liveSlider("ขนาดเม็ดเกรน · 1 ละเอียด – 4 หยาบ", DisplayTuner.K_LOOK_GRAIN_SIZE,
-            DisplayTuner.GRAIN_SIZE_MIN, DisplayTuner.GRAIN_SIZE_MAX, cfg.grainSize, step = 1, format = { "$it" })
-        brightSlider = liveSlider("ความสว่าง (Brightness)", DisplayTuner.K_LOOK_BRIGHT, -g, g, cfg.brightness, format = signed)
-        contrastSlider = liveSlider("คอนทราสต์ (Contrast)", DisplayTuner.K_LOOK_CONTRAST, -g, g, cfg.contrast, format = signed)
-        satSlider = liveSlider("ความอิ่มสี (Saturation)", DisplayTuner.K_LOOK_SAT, -g, g, cfg.saturation, format = signed)
-        vibSlider = liveSlider("Vibrance", DisplayTuner.K_LOOK_VIB, -g, g, cfg.vibrance, format = signed)
-        tempSlider = liveSlider("อุณหภูมิสี (เย็น − / อุ่น +)", DisplayTuner.K_LOOK_TEMP, -g, g, cfg.temperature, format = signed)
-        tintSlider = liveSlider("Tint (เขียว − / ม่วงแดง +)", DisplayTuner.K_LOOK_TINT, -g, g, cfg.tint, format = signed)
-
-        fx.addView(
-            action("รีเซ็ตเอฟเฟกต์/สี/เกรนทั้งหมด", Palette.AMBER) { resetFx() },
-            LinearLayout.LayoutParams(-1, -2).apply { topMargin = kit.dp(16) },
-        )
-
-        val controls = ScrollView(kit.ctx).apply {
-            isVerticalScrollBarEnabled = false
+        val infoBox = LinearLayout(kit.ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(kit.dp(10), 0, kit.dp(10), kit.dp(10))
+            addView(info, lp(-2, -2))
             addView(
-                LinearLayout(kit.ctx).apply {
-                    setPadding(kit.dp(16), kit.dp(4), kit.dp(16), kit.dp(16))
-                    addView(card, LinearLayout.LayoutParams(-1, -2))
-                    addView(fx, LinearLayout.LayoutParams(-1, -2).apply { topMargin = kit.dp(12) })
-                },
+                kit.text("ลากเส้นแบ่ง · บีบนิ้วซูม · แตะสองครั้งซูม/รีเซ็ต", 11f, Palette.MUTED)
+                    .apply { setPadding(kit.dp(2), kit.dp(6), 0, 0) },
             )
         }
+        infoBox.isClickable = false
+        viewer.addView(infoBox, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START))
+
+        // ---- settings panel (tabs: upscale / effects / colour), all controls built once
+        val pages = listOf(buildUpscalePage(cfg), buildEffectsPage(cfg), buildColourPage(cfg))
+        val names = listOf("อัปสเกล", "เอฟเฟกต์", "สี")
+        val scroll = ScrollView(kit.ctx).apply { isVerticalScrollBarEnabled = false }
+        val tabViews = ArrayList<Pair<TextView, View>>()
+        fun paintTabs() = tabViews.forEachIndexed { i, (label, bar) ->
+            val on = i == tab
+            label.setTextColor(if (on) Palette.AMBER else Palette.MUTED)
+            bar.setBackgroundColor(if (on) Palette.AMBER else 0)
+        }
+        fun openTab(i: Int) {
+            tab = i
+            paintTabs()
+            scroll.removeAllViews()
+            (pages[i].parent as? android.view.ViewGroup)?.removeView(pages[i])
+            scroll.addView(pages[i])
+            scroll.scrollTo(0, 0)
+        }
+        val tabRow = LinearLayout(kit.ctx).apply { setPadding(kit.dp(10), kit.dp(2), kit.dp(10), 0) }
+        names.forEachIndexed { i, name ->
+            val label = kit.text(name, 14f, bold = true).apply {
+                gravity = Gravity.CENTER
+                setPadding(0, kit.dp(12), 0, kit.dp(10))
+            }
+            val bar = View(kit.ctx)
+            tabViews.add(label to bar)
+            tabRow.addView(
+                LinearLayout(kit.ctx).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setOnClickListener { openTab(i) }
+                    addView(label, lp())
+                    addView(bar, lp(-1, kit.dp(2)).apply { marginStart = kit.dp(14); marginEnd = kit.dp(14) })
+                },
+                lp(0, -2).apply { weight = 1f },
+            )
+        }
+        val panel = LinearLayout(kit.ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Palette.SURFACE)
+            addView(View(kit.ctx).apply { setBackgroundColor(Palette.STROKE) }, lp(-1, kit.dp(1)))
+            addView(tabRow)
+            addView(View(kit.ctx).apply { setBackgroundColor(Palette.STROKE) }, lp(-1, kit.dp(1)))
+            addView(scroll, lp(-1, 0).apply { weight = 1f })
+        }
+        openTab(tab)
 
         if (landscape) {
             val body = LinearLayout(kit.ctx)
-            body.addView(viewer, LinearLayout.LayoutParams(0, -1, 1.5f))
-            body.addView(controls, LinearLayout.LayoutParams(0, -1, 1f))
-            page.addView(body, LinearLayout.LayoutParams(-1, 0, 1f))
+            body.addView(viewer, lp(0, -1).apply { weight = 1.5f })
+            body.addView(panel, lp(0, -1).apply { weight = 1f })
+            page.addView(body, lp(-1, 0).apply { weight = 1f })
         } else {
-            page.addView(viewer, LinearLayout.LayoutParams(-1, 0, 5f))
-            page.addView(controls, LinearLayout.LayoutParams(-1, 0, 4f))
+            page.addView(viewer, lp(-1, 0).apply { weight = 5f })
+            page.addView(panel, lp(-1, 0).apply { weight = 4f })
         }
         setContentView(page)
         restoring = false
@@ -297,6 +233,132 @@ class CompareActivity : Activity() {
                 loadSource()
             }
         }
+    }
+
+    // ---- building blocks (same look as the in-game drawer)
+
+    private fun newPage() = LinearLayout(kit.ctx).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(kit.dp(14), kit.dp(2), kit.dp(14), kit.dp(18))
+    }
+
+    private fun group(page: LinearLayout, title: String): LinearLayout = LinearLayout(kit.ctx).apply {
+        orientation = LinearLayout.VERTICAL
+        background = kit.rounded(0xFF22252B.toInt(), 14, 0xFF2C3036.toInt(), 1)
+        setPadding(kit.dp(14), kit.dp(12), kit.dp(14), kit.dp(16))
+        addView(kit.text(title, 12f, Palette.MUTED, bold = true, spacing = 0.06f))
+        page.addView(this, lp().apply { topMargin = kit.dp(12) })
+    }
+
+    private fun gap(g: LinearLayout, v: View, top: Int = 16) = g.addView(v, lp().apply { topMargin = kit.dp(top) })
+
+    private fun label(g: LinearLayout, title: String, desc: String? = null) {
+        val box = LinearLayout(kit.ctx).apply { orientation = LinearLayout.VERTICAL }
+        box.addView(kit.text(title, 13.5f, Palette.TEXT, bold = true))
+        if (desc != null) box.addView(kit.text(desc, 11.5f, Palette.DIM), lp().apply { topMargin = kit.dp(2) })
+        gap(g, box)
+    }
+
+    /** Slider writing [key] while dragging (live re-render) and once more on release. */
+    private fun liveSlider(
+        g: LinearLayout, title: String, key: String, min: Int, max: Int, init: Int, step: Int = 5,
+        format: (Int) -> String,
+    ): Slider {
+        val sl = Slider(
+            kit, min, max, init, step = step, format = format, title = title, showRange = false,
+            onPreview = { if (!restoring) { prefs.edit().putInt(key, it).apply(); schedule() } },
+        ) { prefs.edit().putInt(key, it).apply() }
+        gap(g, sl)
+        return sl
+    }
+
+    private val strength: (Int) -> String = { if (it == 0) "ปิด" else "$it%" }
+    private val signed: (Int) -> String = { if (it > 0) "+$it" else "$it" }
+
+    private fun buildUpscalePage(cfg: DisplayTuner.Config): LinearLayout {
+        val page = newPage()
+        val up = group(page, "อัปสเกล")
+        label(up, "ฟิลเตอร์")
+        modeBox = FrameLayout(kit.ctx)
+        buildModeSeg()
+        up.addView(modeBox, lp().apply { topMargin = kit.dp(8) })
+
+        sharpSlider = liveSlider(up, "ความคมหลังอัปสเกล", DisplayTuner.K_UPSCALE_SHARP, 0, DisplayTuner.STRENGTH_MAX, cfg.upscaleSharp, format = strength)
+        label(up, "วิธีเพิ่มความคม")
+        methodSeg = Segmented(
+            kit, DisplayTuner.sharpMethods.map { it.second },
+            DisplayTuner.sharpMethods.indexOfFirst { it.first == cfg.upscaleSharpMethod }.coerceAtLeast(0),
+            textSp = 13f,
+        ) { i ->
+            prefs.edit().putInt(DisplayTuner.K_UPSCALE_SHARP_METHOD, DisplayTuner.sharpMethods[i].first).apply()
+            schedule()
+            true
+        }
+        up.addView(methodSeg, lp().apply { topMargin = kit.dp(8) })
+
+        val res = group(page, "ความละเอียด (% ของภาพเต็ม)")
+        percentSlider = liveSlider(res, "เรนเดอร์", DisplayTuner.K_PERCENT, DisplayTuner.MIN_PERCENT, DisplayTuner.MAX_PERCENT, cfg.percent,
+            step = DisplayTuner.PERCENT_STEP, format = { "$it%" })
+        outSlider = liveSlider(res, "เอาต์พุต", DisplayTuner.K_OUT_PERCENT, DisplayTuner.MIN_OUT_PERCENT, DisplayTuner.MAX_OUT_PERCENT, cfg.outPercent,
+            step = DisplayTuner.OUT_PERCENT_STEP, format = { "$it%" })
+        res.addView(
+            kit.text(
+                "ค่าที่เลือกบันทึกให้อัตโนมัติ · ใช้ค่าเดียวกับตอนรันจริง · ภาพเต็ม = ภาพที่เลือก (ย่อให้ด้านยาวไม่เกิน $MAX_SIDE px)",
+                11.5f, Palette.DIM,
+            ), lp().apply { topMargin = kit.dp(12) },
+        )
+        return page
+    }
+
+    private fun buildEffectsPage(cfg: DisplayTuner.Config): LinearLayout {
+        val page = newPage()
+        val g = group(page, "เอฟเฟกต์ภาพ")
+        denoiseSlider = liveSlider(g, "ลดสัญญาณรบกวน/บล็อก", DisplayTuner.K_ENH_DENOISE, 0, DisplayTuner.STRENGTH_MAX, cfg.denoise, format = strength)
+        label(g, "ลดฟันปลา (Anti-aliasing)", "ก่อนอัปสเกล")
+        aaSeg = Segmented(
+            kit, DisplayTuner.aaModes.map { it.second },
+            DisplayTuner.aaModes.indexOfFirst { it.first == cfg.aa }.coerceAtLeast(0), textSp = 13f,
+        ) { i ->
+            prefs.edit().putInt(DisplayTuner.K_ENH_AA, DisplayTuner.aaModes[i].first).apply()
+            schedule()
+            true
+        }
+        g.addView(aaSeg, lp().apply { topMargin = kit.dp(8) })
+        debandSlider = liveSlider(g, "ลดแถบสี (Deband)", DisplayTuner.K_ENH_DEBAND, 0, DisplayTuner.STRENGTH_MAX, cfg.deband, format = strength)
+        label(g, "Dither", "เติมนอยส์ละเอียดก่อนลงค่า 8-bit")
+        ditherSeg = Segmented(kit, listOf("ปิด", "เปิด"), if (cfg.dither) 1 else 0, textSp = 13f) { i ->
+            prefs.edit().putBoolean(DisplayTuner.K_ENH_DITHER, i == 1).apply()
+            schedule()
+            true
+        }
+        g.addView(ditherSeg, lp().apply { topMargin = kit.dp(8) })
+        return page
+    }
+
+    private fun buildColourPage(cfg: DisplayTuner.Config): LinearLayout {
+        val page = newPage()
+        val g = DisplayTuner.GRADE_RANGE
+        val color = group(page, "ปรับสี")
+        brightSlider = liveSlider(color, "ความสว่าง", DisplayTuner.K_LOOK_BRIGHT, -g, g, cfg.brightness, format = signed)
+        contrastSlider = liveSlider(color, "คอนทราสต์", DisplayTuner.K_LOOK_CONTRAST, -g, g, cfg.contrast, format = signed)
+        satSlider = liveSlider(color, "ความอิ่มสี", DisplayTuner.K_LOOK_SAT, -g, g, cfg.saturation, format = signed)
+        vibSlider = liveSlider(color, "Vibrance", DisplayTuner.K_LOOK_VIB, -g, g, cfg.vibrance, format = signed)
+        tempSlider = liveSlider(color, "อุณหภูมิสี (เย็น − / อุ่น +)", DisplayTuner.K_LOOK_TEMP, -g, g, cfg.temperature, format = signed)
+        tintSlider = liveSlider(color, "Tint (เขียว − / ม่วงแดง +)", DisplayTuner.K_LOOK_TINT, -g, g, cfg.tint, format = signed)
+        val grain = group(page, "ฟิล์มเกรน")
+        grainSlider = liveSlider(grain, "ปริมาณเกรน", DisplayTuner.K_LOOK_GRAIN, 0, DisplayTuner.GRAIN_MAX, cfg.grain, format = strength)
+        grainSizeSlider = liveSlider(grain, "ขนาดเม็ด (1 ละเอียด – 4 หยาบ)", DisplayTuner.K_LOOK_GRAIN_SIZE,
+            DisplayTuner.GRAIN_SIZE_MIN, DisplayTuner.GRAIN_SIZE_MAX, cfg.grainSize, step = 1, format = { "$it" })
+        page.addView(
+            kit.text("รีเซ็ตเอฟเฟกต์/สี/เกรนทั้งหมด", 14f, Palette.AMBER, bold = true).apply {
+                gravity = Gravity.CENTER
+                setPadding(0, kit.dp(12), 0, kit.dp(12))
+                background = kit.rounded(Palette.SURFACE_HI, 14, Palette.STROKE, 1)
+                setOnClickListener { resetFx() }
+            },
+            lp().apply { topMargin = kit.dp(14) },
+        )
+        return page
     }
 
     /** Zeroes every effect / colour / grain control (sharpen + resolutions are left alone). */
@@ -534,6 +596,7 @@ class CompareActivity : Activity() {
                 view.setImages(low, result, bw, bh)
                 view.message = if (result == null) "อัปสเกลไม่สำเร็จ (ดู Log)" else null
                 val modeName = DisplayTuner.upscaleModes(this).firstOrNull { it.first == mode }?.second ?: "?"
+                info.visibility = View.VISIBLE
                 info.text = buildString {
                     append(modeName)
                     if (sharp > 0) {

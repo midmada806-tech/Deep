@@ -98,6 +98,12 @@ class CompareView(context: Context, private val kit: Kit) : View(context) {
         invalidate()
     }
 
+    /** Divider position 0..1 (1 = only the "before" side, 0 = only the "after" side). */
+    fun setSplit(fraction: Float) {
+        split = fraction.coerceIn(0f, 1f)
+        invalidate()
+    }
+
     fun resetZoom() {
         zoomed = false
         computeFit()
