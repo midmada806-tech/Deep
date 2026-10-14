@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Fluxa</string>
+    <string name="a11y_label">Fluxa overlay</string>
+    <string name="a11y_description">ใช้แสดง overlay ของ Fluxa ให้แตะทะลุไปที่เกมได้ ไม่อ่านหรือเก็บข้อมูลบนหน้าจอ</string>
+</resources>
