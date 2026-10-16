@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="fluxa_app_name" translatable="false">Fluxa</string>
+    <string name="fluxa_a11y_label" translatable="false">Fluxa overlay</string>
+    <string name="fluxa_a11y_description">ใช้แสดง overlay ของ Fluxa ให้แตะทะลุไปที่เกมได้ ไม่อ่านหรือเก็บข้อมูลบนหน้าจอ</string>
+
+    <color name="fluxa_bg">#15171B</color>
+
+    <style name="Theme.Fluxa" parent="@android:style/Theme.DeviceDefault.NoActionBar">
+        <item name="android:windowBackground">@color/fluxa_bg</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:enforceNavigationBarContrast">false</item>
+        <item name="android:enforceStatusBarContrast">false</item>
+        <item name="android:colorAccent">#FFA83D</item>
+    </style>
+</resources>

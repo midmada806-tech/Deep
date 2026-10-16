@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<paths>
-    <!-- Scoped to the diagnostics subdirectory only (last_crash.txt,
-         last_crash_seen.txt, lsfg.log) — NOT the whole app filesDir root.
-         Keeping this narrow means a leaked/forged content:// URI for this
-         authority can never expose unrelated app-private files. -->
-    <files-path name="lsfg_crash_logs" path="diagnostics/" />
-</paths>
