@@ -1,0 +1,695 @@
+package com.playtranslate.ui
+
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.ValueAnimator
+import android.annotation.SuppressLint
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.RectF
+import android.view.MotionEvent
+import android.view.View
+import android.view.animation.Interpolator
+import android.view.animation.PathInterpolator
+import com.playtranslate.R
+import androidx.core.graphics.toColorInt
+import androidx.core.graphics.withClip
+import androidx.core.graphics.withTranslation
+import kotlin.math.max
+
+/**
+ * True when a press at ([touchX], [touchY]) landed on the sonar intro's
+ * carrier — the animating icon itself — rather than out in the ring field
+ * around it.
+ *
+ * The intro's window has to be big: the sonar rings sweep out to 3.7x the
+ * carrier radius, so it is sized (320 x 280 dp) to hold them. It also has
+ * to stay touchable — a pass-through TYPE_APPLICATION_OVERLAY is
+ * opacity-capped on the MediaProjection backend, which would dim the whole
+ * animation — and a touchable window owns every touch inside its bounds
+ * (an event its view leaves unhandled is dropped, never re-dispatched to
+ * the app below). So the grab target is shaped by hit-testing INSIDE the
+ * window rather than by shrinking or disarming it.
+ *
+ * [carrierRadiusPx] is the carrier's radius as currently DRAWN, floored at
+ * [dockedRadiusPx] so the target never shrinks below the docked icon's own
+ * while the carrier is springing in at 0.4x, plus [padPx] of grab padding.
+ *
+ * A carrier still fading up is not a target at all: below
+ * [minOpacityToGrab] nothing is meaningfully painted at [carrierCx] /
+ * [carrierCy], so a press there is aimed at the app underneath, not at us.
+ * The threshold belongs at the BOTTOM of the fade — opacity and scale ramp
+ * together, so a carrier half-way up is already plainly on screen, and a
+ * high bar would trade an invisible target that accepts presses for a
+ * visible one that ignores them, which is the worse of the two.
+ *
+ * Pure (no Android deps) so the hit math is unit-testable.
+ */
+internal fun sonarIntroCarrierGrab(
+    touchX: Float, touchY: Float,
+    carrierCx: Float, carrierCy: Float,
+    carrierRadiusPx: Float,
+    carrierOpacity: Float,
+    dockedRadiusPx: Float,
+    padPx: Float,
+    minOpacityToGrab: Float,
+): Boolean {
+    if (carrierOpacity < minOpacityToGrab) return false
+    val r = max(carrierRadiusPx, dockedRadiusPx) + padPx
+    val dx = touchX - carrierCx
+    val dy = touchY - carrierCy
+    return dx * dx + dy * dy <= r * r
+}
+
+/**
+ * One-shot "sonar ping" intro animation that draws the user's eye to the
+ * floating overlay icon the first time it appears on screen per capture
+ * session. See `design_handoff_sonar_ping/` for the full spec.
+ *
+ * Plays in a dedicated overlay window installed alongside (and on top of)
+ * the real [FloatingOverlayIcon]. While the intro runs, the underlying icon
+ * is held at `alpha = 0` so the carrier here is the only thing the user
+ * sees; the final pose of the animation matches the icon's docked
+ * `compactMode` rendering exactly, so the handoff frame has no seam.
+ *
+ * Timeline (all times in ms from animation start; total 3560 ms):
+ *
+ *  | Phase             | Window (ms)      | Effect                              |
+ *  | ----------------- | ---------------- | ----------------------------------- |
+ *  | Sonar rings ×4    | 0    – 3000      | Four evenly-placed white rings, 750ms apart. Each ramps in (1.28× scale, full opacity, 15dp border), then expands + fades to 3.7× / opacity 0 / 0.5dp border over 670ms. |
+ *  | Spring pop-in     | 0    – 720       | Carrier scales 0.40 → 1.40 → 1.20 → 1.286 with opacity 0 → 1, sitting 80dp inboard of the dock edge |
+ *  | Undulation 1      | 720  – 1860      | Carrier eases 1.286 → 1.40 → 1.286 (sine-like via paired ease-out + ease-in) |
+ *  | Undulation 2      | 1860 – 3000      | Same shape — ends EXACTLY at 3000 ms so the next frame is the start of travel, no still hold between |
+ *  | Slide / bounce    | 3000 – 3560      | Carrier eases into the wall, squashes, rebounds, and settles; crossfades from app-icon art to the compact nub between 3160 – 3320 |
+ *  | Settled           | 3560+            | Same pose as [FloatingOverlayIcon]'s compact dock   |
+ *
+ *  Touches: a touch anywhere in the intro window resolves the animation
+ *  early, but only a touch on the CARRIER — the animating icon itself —
+ *  forwards its gesture to the underlying [FloatingOverlayIcon] (a tap
+ *  opens the floating menu, a hold or drag starts the magnifying search).
+ *  The ring field around it is decoration, not a target: see
+ *  [onTouchEvent] and [sonarIntroCarrierGrab].
+ *
+ * The view is symmetric for [FloatingOverlayIcon.Edge.LEFT] and
+ * [Edge.RIGHT] — the same keyframes are mirrored horizontally for LEFT.
+ */
+class SonarPingIntroView(
+    context: Context,
+    /** Screen edge the carrier docks against. Read by
+     *  [com.playtranslate.OverlayUiController] when the display rotates so
+     *  the intro window's x/y can be recomputed against the new screen
+     *  dimensions without rebuilding the view. */
+    val edge: FloatingOverlayIcon.Edge,
+    /** The real floating icon this intro plays over. A touch on the intro
+     *  resolves the animation early, and a touch on the carrier is forwarded
+     *  to this icon so the gesture acts on it directly — see
+     *  [onTouchEvent]. */
+    private val icon: FloatingOverlayIcon,
+) : View(context) {
+
+    /** Optional completion callback. Fired once on the main thread when the
+     *  intro finishes — either the animation ran its full course, or a
+     *  touch resolved it early (see [onTouchEvent]). The caller removes this
+     *  view's overlay window and clears its bookkeeping. The underlying
+     *  [FloatingOverlayIcon] is back at `alpha = 1` by then — restored by
+     *  the caller on natural end, or by [resolveForTouch] on a touch. */
+    var onFinished: (() -> Unit)? = null
+
+    /** True once a touch has resolved the intro early: the animator is
+     *  cancelled and [onDraw] stops painting the carrier, so the real icon
+     *  — restored to `alpha = 1` and now owning the gesture — shows through
+     *  the (still-installed) intro window until the gesture ends. */
+    private var resolved = false
+
+    private val density = resources.displayMetrics.density
+    /** Radius of the floating icon's carrier circle (matches
+     *  [FloatingOverlayIcon.circleSizePx] / 2 = 28dp at scale 1). */
+    private val circleRadiusPx = 28f * density
+
+    /** Anchor centre in view-local coords. The anchor sits 28 dp inboard of
+     *  the dock edge — for RIGHT, that's (width - 28dp); for LEFT, 28 dp.
+     *  Resolved lazily in onDraw because width/height aren't known until
+     *  the view is laid out. */
+    private val anchorInsetPx: Float get() = circleRadiusPx
+    private val anchorCenterY: Float get() = height / 2f
+    private val anchorCenterX: Float
+        get() = if (mirrored) anchorInsetPx else (width - anchorInsetPx)
+
+    /** LEFT-edge docks mirror the whole layout horizontally. */
+    private val mirrored: Boolean get() = edge == FloatingOverlayIcon.Edge.LEFT
+    /** Sign applied to every signed x offset — see [CarrierKeyframe]. */
+    private val signX: Float get() = if (mirrored) -1f else 1f
+
+    /** View-local x of the carrier's centre in [carrier]'s pose. Shared by
+     *  [onDraw] and the touch hit-test so the drawn carrier and the grab
+     *  target can't drift apart. */
+    private fun carrierCenterX(carrier: CarrierState): Float =
+        anchorCenterX + signX * carrier.translateXDp * density
+
+    // ── Paints ───────────────────────────────────────────────────────────
+
+    private val appIconBitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val launcherBitmap: Bitmap = BitmapFactory.decodeResource(
+        resources, R.mipmap.ic_launcher_img
+    )
+    /** Circle clip used while drawing the launcher art so the oversized
+     *  bitmap (1.5× — see [APP_ICON_FILL_RATIO]) gets cropped to a perfect
+     *  circle. Mirrors OverlayAlert's outline-clipped frame approach. */
+    private val appIconClip = Path()
+
+    /** Nub fill — matches [FloatingOverlayIcon]'s `defaultCircleColor`. */
+    private val nubFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = "#CC000000".toColorInt()
+    }
+    /** Nub border — matches [FloatingOverlayIcon]'s borderPaint (1.5 dp
+     *  stroke, soft grey at 40% alpha). */
+    private val nubBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = "#66888888".toColorInt()
+        style = Paint.Style.STROKE
+        strokeWidth = 1.5f * density
+    }
+    /** Nub arrow fill — solid white, matches [FloatingOverlayIcon]. */
+    private val arrowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+    }
+    private val arrowPath = Path()
+
+    /** Sonar ring stroke. Per-ring opacity + width re-applied each frame. */
+    private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        color = Color.WHITE
+    }
+    /** Sonar ring border — drawn UNDERNEATH the white stroke at the same
+     *  radius with [RING_BORDER_PIPE_DP] of extra width on each side, so
+     *  it shows as a thin dark piping on both the inside and outside of
+     *  the white ring. Same alpha curve as the white ring. */
+    private val ringBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        color = "#555555".toColorInt()
+    }
+
+    // ── Animation state ──────────────────────────────────────────────────
+
+    /** Decel curve for the ring expand+fade phase (spec: cubic-bezier
+     *  (0.2, 0.6, 0.2, 1)). */
+    private val ringEasing = PathInterpolator(0.2f, 0.6f, 0.2f, 1f)
+
+    private var progress = 0f
+    private var animator: ValueAnimator? = null
+
+    /** Kick off the animation. Idempotent — calling again restarts from t=0. */
+    fun start() {
+        animator?.cancel()
+        animator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = TOTAL_DURATION_MS
+            // Linear at the animator level; the keyframe tables encode the
+            // easing per phase.
+            interpolator = null
+            addUpdateListener {
+                progress = it.animatedValue as Float
+                invalidate()
+            }
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    onFinished?.invoke()
+                }
+            })
+            start()
+        }
+    }
+
+    override fun onDetachedFromWindow() {
+        animator?.cancel()
+        animator = null
+        super.onDetachedFromWindow()
+    }
+
+    /** Latched at ACTION_DOWN: true when the press landed on the carrier, so
+     *  the whole gesture forwards to the [icon]. A press out in the ring
+     *  field latches false — it dismisses the intro and does nothing else. */
+    private var forwardingGesture = false
+
+    /** A touch on the still-playing intro resolves it at once. A touch on
+     *  the CARRIER additionally hands the whole gesture to the real [icon]:
+     *  a tap opens the floating menu, a hold or drag starts the magnifying
+     *  search — exactly as if the user had grabbed the docked icon at the
+     *  screen edge. A touch anywhere else in the window — the ring field,
+     *  which is most of a 320 x 280 dp window, and the carrier's own spot
+     *  during the first frames of its fade-in, before there is anything
+     *  there to aim at — only dismisses; the rings are decoration, not a
+     *  320 dp-wide button (see [carrierGrabbed]).
+     *
+     *  Dismissing on a ring-field press rather than ignoring it is
+     *  deliberate: the window eats every touch inside its bounds for as
+     *  long as it exists and can't be made pass-through (see
+     *  [sonarIntroCarrierGrab]), so ending the intro on the first stray
+     *  press is what actually hands the region back, one press later.
+     *
+     *  The intro window captured ACTION_DOWN, so the OS keeps delivering the
+     *  rest of the gesture here even once the finger leaves the window's
+     *  bounds; each forwarded event goes straight to the icon's own
+     *  [FloatingOverlayIcon.onTouchEvent]. The icon reads screen-absolute
+     *  `rawX`/`rawY` and acts on its own window, so forwarding the events
+     *  verbatim drives it correctly. */
+    @SuppressLint("ClickableViewAccessibility")
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        // Decided at press time, before resolving: once resolved the carrier
+        // stops drawing and its pose is no longer what the user is aiming at.
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+            forwardingGesture = carrierGrabbed(event.x, event.y)
+        }
+        if (!resolved) resolveForTouch(forwardGesture = forwardingGesture)
+        if (forwardingGesture) icon.onTouchEvent(event)
+        when (event.actionMasked) {
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                icon.holdStartsDrag = false
+                onFinished?.invoke()
+            }
+        }
+        return true
+    }
+
+    /** Hit-test a press at view-local ([x], [y]) against the carrier's
+     *  current pose and opacity — the same [carrierAt] / [carrierOpacityAt]
+     *  frame [onDraw] is painting — with [TOUCH_PAD_DP] of grab padding, the
+     *  same the docked [FloatingOverlayIcon] grants itself around its own
+     *  circle. Reading the renderer's own functions is what keeps the target
+     *  and the pixels from drifting apart. */
+    private fun carrierGrabbed(x: Float, y: Float): Boolean {
+        val timeMs = progress * TOTAL_DURATION_MS
+        val carrier = carrierAt(timeMs)
+        return sonarIntroCarrierGrab(
+            touchX = x, touchY = y,
+            carrierCx = carrierCenterX(carrier),
+            carrierCy = anchorCenterY,
+            carrierRadiusPx = circleRadiusPx * max(carrier.scaleX, carrier.scaleY),
+            carrierOpacity = carrierOpacityAt(timeMs),
+            dockedRadiusPx = circleRadiusPx,
+            padPx = TOUCH_PAD_DP * density,
+            minOpacityToGrab = MIN_GRAB_OPACITY,
+        )
+    }
+
+    /** Resolve the intro the instant it is touched: cancel the animation,
+     *  stop drawing the carrier, un-hide the real icon, and — only when the
+     *  press landed on the carrier ([forwardGesture]) — route a hold on the
+     *  forwarded gesture into the magnifying search. The intro window is
+     *  NOT removed here — it still owns the in-flight gesture; [onFinished]
+     *  tears the window down on ACTION_UP / ACTION_CANCEL. */
+    private fun resolveForTouch(forwardGesture: Boolean) {
+        resolved = true
+        // Drop the end-listener before cancelling: ValueAnimator.cancel()
+        // fires its onAnimationEnd listener synchronously, which would
+        // invoke onFinished and tear the window down mid-gesture. The intro
+        // fires onFinished itself once the gesture completes.
+        animator?.removeAllListeners()
+        animator?.cancel()
+        animator = null
+        icon.alpha = 1f
+        if (forwardGesture) icon.holdStartsDrag = true
+        invalidate()
+    }
+
+    // ── Drawing ──────────────────────────────────────────────────────────
+
+    override fun onDraw(canvas: Canvas) {
+        // Resolved by a touch — the real icon now renders the carrier.
+        if (resolved) return
+        val timeMs = progress * TOTAL_DURATION_MS
+        val mirror = mirrored
+        val anchorY = anchorCenterY
+
+        // Rings are anchored at the carrier's ENTRY position
+        // (translate(-80dp, 0) from the anchor) and stay put as the carrier
+        // moves on to dock. They're all faded out by the time the travel
+        // phase starts so they never "follow".
+        val ringCenterX = anchorCenterX + signX * (-ENTRY_OFFSET_DP * density)
+        for (spec in RING_SPECS) {
+            drawRing(canvas, ringCenterX, anchorY, timeMs, spec)
+        }
+
+        // Carrier.
+        val carrier = carrierAt(timeMs)
+        val carrierX = carrierCenterX(carrier)
+        val carrierOpacity = carrierOpacityAt(timeMs)
+        if (carrierOpacity <= 0f) return
+
+        canvas.withTranslation(carrierX, anchorY) {
+            scale(carrier.scaleX, carrier.scaleY)
+
+            // The renderer cross-fades the app-icon art into the compact nub
+            // mid-travel — both compositions are drawn centred at (0, 0) in the
+            // scaled local space.
+            val appAlpha = appIconOpacityAt(timeMs) * carrierOpacity
+            val nubAlpha = nubOpacityAt(timeMs) * carrierOpacity
+            if (appAlpha > 0f) drawAppIcon(this, appAlpha)
+            if (nubAlpha > 0f) drawNub(this, nubAlpha, mirror)
+        }
+    }
+
+    /** Draws the launcher art centred at (0, 0), clipped to the carrier
+     *  circle. Matches OverlayAlert's app-icon presentation: the launcher
+     *  bitmap is drawn at [APP_ICON_FILL_RATIO] × the circle diameter
+     *  (oversize, to push the adaptive-icon padding past the circle edge)
+     *  and the clip crops it to a perfect circle. The launcher's own
+     *  background colour fills the circle — no separate paint needed. */
+    private fun drawAppIcon(canvas: Canvas, opacity: Float) {
+        val alpha = (opacity * 255f).toInt().coerceIn(0, 255)
+        appIconBitmapPaint.alpha = alpha
+
+        appIconClip.reset()
+        appIconClip.addCircle(0f, 0f, circleRadiusPx, Path.Direction.CW)
+        canvas.withClip(appIconClip) {
+            val side = APP_ICON_FILL_RATIO * 2f * circleRadiusPx
+            val half = side / 2f
+            val rect = RectF(-half, -half, half, half)
+            drawBitmap(launcherBitmap, null, rect, appIconBitmapPaint)
+        }
+    }
+
+    /** Draws the compact nub (1/4-visible black circle with a small arrow)
+     *  centred at (0, 0). Mirrors [FloatingOverlayIcon]'s compact rendering
+     *  but here the carrier-translation has already positioned the circle
+     *  so it spills off the screen edge; the arrow is offset towards the
+     *  visible slice. */
+    private fun drawNub(canvas: Canvas, opacity: Float, mirror: Boolean) {
+        val alpha = (opacity * 255f).toInt().coerceIn(0, 255)
+        nubFillPaint.alpha = alpha
+        nubBorderPaint.alpha = (alpha * (102f / 255f)).toInt().coerceIn(0, 255)
+        canvas.drawCircle(0f, 0f, circleRadiusPx, nubFillPaint)
+        canvas.drawCircle(0f, 0f, circleRadiusPx, nubBorderPaint)
+
+        // Arrow sits towards the visible slice — for RIGHT-edge dock that
+        // means LEFT of the circle's centre; for LEFT-edge dock the mirror.
+        val arrowOffset = ARROW_NUDGE_RATIO * circleRadiusPx
+        val arrowCx = if (mirror) arrowOffset else -arrowOffset
+        val arrowSize = circleRadiusPx * ARROW_SIZE_RATIO
+        arrowPaint.alpha = alpha
+        drawEdgeArrow(canvas, arrowCx, 0f, arrowSize, mirror)
+    }
+
+    /** Triangle arrow pointing toward the screen interior — mirrors
+     *  [FloatingOverlayIcon.drawEdgeArrow]. */
+    private fun drawEdgeArrow(canvas: Canvas, cx: Float, cy: Float, size: Float, mirror: Boolean) {
+        val hw = size * 0.5f
+        val hh = size * 0.7f
+        arrowPath.reset()
+        if (mirror) {
+            // LEFT edge → arrow points RIGHT.
+            arrowPath.moveTo(cx + hw, cy)
+            arrowPath.lineTo(cx - hw * 0.3f, cy - hh)
+            arrowPath.lineTo(cx - hw * 0.3f, cy + hh)
+        } else {
+            // RIGHT edge → arrow points LEFT.
+            arrowPath.moveTo(cx - hw, cy)
+            arrowPath.lineTo(cx + hw * 0.3f, cy - hh)
+            arrowPath.lineTo(cx + hw * 0.3f, cy + hh)
+        }
+        arrowPath.close()
+        canvas.drawPath(arrowPath, arrowPaint)
+    }
+
+    /** Draws one sonar ring per its [spec]. Quiet outside the spec's
+     *  start–end window; in-window, ramps in (linear, 0 → peak opacity,
+     *  0.6× → 1.28× scale, 2.5dp border) then expands and fades out on
+     *  the decel bezier (cubic-bezier(0.2, 0.6, 0.2, 1)) to the spec's
+     *  end scale, opacity 0, border 0.5dp. */
+    private fun drawRing(
+        canvas: Canvas,
+        cx: Float, cy: Float,
+        timeMs: Float,
+        spec: RingSpec,
+    ) {
+        if (timeMs < spec.startMs || timeMs > spec.endMs) return
+
+        val scale: Float
+        val opacity: Float
+        val borderDp: Float
+        if (timeMs < spec.peakMs) {
+            val k = (timeMs - spec.startMs) / (spec.peakMs - spec.startMs)
+            scale = lerp(RING_START_SCALE, RING_PEAK_SCALE, k)
+            opacity = lerp(0f, spec.peakOpacity, k)
+            borderDp = RING_START_BORDER_DP
+        } else {
+            val rawK = (timeMs - spec.peakMs) / (spec.endMs - spec.peakMs)
+            val k = ringEasing.getInterpolation(rawK.coerceIn(0f, 1f))
+            scale = lerp(RING_PEAK_SCALE, spec.endScale, k)
+            opacity = lerp(spec.peakOpacity, 0f, k)
+            borderDp = lerp(RING_START_BORDER_DP, RING_END_BORDER_DP, k)
+        }
+
+        if (opacity <= 0f) return
+        val alpha = (opacity * 255f).toInt().coerceIn(0, 255)
+        val radius = circleRadiusPx * scale
+        // Border first — wider stroke, drawn at the same radius, so 1dp of
+        // dark grey peeks out on each side of the white ring once the
+        // narrower white stroke overdraws the middle.
+        ringBorderPaint.alpha = alpha
+        ringBorderPaint.strokeWidth = (borderDp + 2f * RING_BORDER_PIPE_DP) * density
+        canvas.drawCircle(cx, cy, radius, ringBorderPaint)
+        // White ring on top.
+        ringPaint.alpha = alpha
+        ringPaint.strokeWidth = borderDp * density
+        canvas.drawCircle(cx, cy, radius, ringPaint)
+    }
+
+    // ── Carrier keyframes ────────────────────────────────────────────────
+    //
+    // translateXDp values are SIGNED: positive = away-from-anchor (i.e.
+    // toward the dock), negative = inboard. The LEFT-edge variant mirrors
+    // this by multiplying by -1 in onDraw (the `sign` variable).
+
+    private data class CarrierState(
+        val translateXDp: Float, val scaleX: Float, val scaleY: Float,
+    )
+
+    private fun carrierAt(timeMs: Float): CarrierState {
+        val frames = CARRIER_KEYFRAMES
+        // Before first keyframe — pin to the first.
+        if (timeMs <= frames[0].timeMs) {
+            val f = frames[0]
+            return CarrierState(f.translateXDp, f.scaleX, f.scaleY)
+        }
+        // After last — pin to the last (the docked pose).
+        if (timeMs >= frames.last().timeMs) {
+            val f = frames.last()
+            return CarrierState(f.translateXDp, f.scaleX, f.scaleY)
+        }
+        for (i in 1 until frames.size) {
+            val next = frames[i]
+            if (timeMs <= next.timeMs) {
+                val prev = frames[i - 1]
+                val k = (timeMs - prev.timeMs) / (next.timeMs - prev.timeMs)
+                // Per-segment interpolator lets the travel segment ease in
+                // independently of the bounce/squash/rebound, which already
+                // encode their dynamics in their keyframe positions.
+                val easedK = next.easeIn?.getInterpolation(k.coerceIn(0f, 1f)) ?: k
+                return CarrierState(
+                    lerp(prev.translateXDp, next.translateXDp, easedK),
+                    lerp(prev.scaleX, next.scaleX, easedK),
+                    lerp(prev.scaleY, next.scaleY, easedK),
+                )
+            }
+        }
+        val f = frames.last()
+        return CarrierState(f.translateXDp, f.scaleX, f.scaleY)
+    }
+
+    private fun carrierOpacityAt(timeMs: Float): Float =
+        if (timeMs <= CARRIER_FADE_IN_END_MS) (timeMs / CARRIER_FADE_IN_END_MS) else 1f
+
+    /** App-icon art is fully opaque until the crossfade window, then fades
+     *  to 0 over [CROSSFADE_DURATION_MS]. */
+    private fun appIconOpacityAt(timeMs: Float): Float = when {
+        timeMs <= CROSSFADE_START_MS -> 1f
+        timeMs >= CROSSFADE_END_MS -> 0f
+        else -> 1f - (timeMs - CROSSFADE_START_MS) / CROSSFADE_DURATION_MS
+    }
+
+    /** Nub is hidden until the crossfade window, then fades in. */
+    private fun nubOpacityAt(timeMs: Float): Float = when {
+        timeMs <= CROSSFADE_START_MS -> 0f
+        timeMs >= CROSSFADE_END_MS -> 1f
+        else -> (timeMs - CROSSFADE_START_MS) / CROSSFADE_DURATION_MS
+    }
+
+    private fun lerp(a: Float, b: Float, t: Float): Float = a + (b - a) * t
+
+    private data class CarrierKeyframe(
+        val timeMs: Float,
+        val translateXDp: Float,
+        val scaleX: Float,
+        val scaleY: Float,
+        /** Easing applied to the segment ENDING at this keyframe. null →
+         *  linear, which is the default the demo HTML uses for everything
+         *  except the explicit ease-in travel into the wall. */
+        val easeIn: Interpolator? = null,
+    )
+
+    /** One sonar ring's lifecycle. [startMs]/[peakMs]/[endMs] in animation-
+     *  start ms; [peakOpacity] = max alpha at the ping moment (used
+     *  directly as the stroke alpha, no further scaling); [endScale] = max
+     *  scale relative to the carrier radius. */
+    private data class RingSpec(
+        val startMs: Float,
+        val peakMs: Float,
+        val endMs: Float,
+        val peakOpacity: Float,
+        val endScale: Float,
+    )
+
+    companion object {
+        /** Full intro duration. Sized so the sonar phase (0–3000 ms) and
+         *  the carrier's travel-to-dock (3000–3560 ms) don't overlap — the
+         *  icon waits for the last ring to finish before moving home. */
+        const val TOTAL_DURATION_MS = 3560L
+
+        /** Entry offset — carrier pops in 80 dp inboard of the dock edge,
+         *  per the spec. */
+        private const val ENTRY_OFFSET_DP = 80f
+        /** Grab padding around the carrier's drawn circle, matching the
+         *  docked [FloatingOverlayIcon]'s own 12 dp touch padding. */
+        private const val TOUCH_PAD_DP = 12f
+        /** Minimum carrier opacity for a press to count as a grab — see
+         *  [sonarIntroCarrierGrab]. The carrier fades up over
+         *  [CARRIER_FADE_IN_END_MS] (240 ms) while the spring scales it
+         *  0.40 -> 1.40, so 0.25 cuts roughly the first four frames at
+         *  60 Hz — the only ones where the grab circle would sit over
+         *  nothing the user can see. Internal so SonarIntroCarrierGrabTest
+         *  exercises the shipped value: raising this bar past a carrier the
+         *  user can already see fails there, by design. */
+        internal const val MIN_GRAB_OPACITY = 0.25f
+        /** Carrier's scale at the entry settle (= ~72 dp diameter from a
+         *  56 dp circle). */
+        private const val ENTRY_SETTLE_SCALE = 1.286f
+        /** Dock translate (75% of the carrier width past the anchor); 75%
+         *  of 56 dp = 42 dp. */
+        private const val DOCK_TRANSLATE_DP = 0.75f * 56f
+        /** Oversize ratio for the launcher bitmap inside the carrier circle.
+         *  Matches OverlayAlert's `circleSize * 1.5` factor — the launcher
+         *  PNG has adaptive-icon padding around its foreground content, so
+         *  we have to scale up past the circle to make the visible art
+         *  fill it. The clip then crops back to the circle. */
+        private const val APP_ICON_FILL_RATIO = 1.5f
+
+        /** Arrow horizontal offset from the carrier centre — matches the
+         *  `arrowNudge` factor used by [FloatingOverlayIcon] (r * 0.65). */
+        private const val ARROW_NUDGE_RATIO = 0.65f
+        /** Arrow size as a ratio of the carrier radius — matches
+         *  [FloatingOverlayIcon]'s 0.22. */
+        private const val ARROW_SIZE_RATIO = 0.22f
+
+        /** Crossfade between the launcher art and the compact nub —
+         *  positioned inside the travel phase (3000–3560 ms) at the same
+         *  relative offset the original spec used (160 ms into travel,
+         *  ending 320 ms in), so the swap happens mid-bounce. */
+        private const val CROSSFADE_START_MS = 3160f
+        private const val CROSSFADE_END_MS = 3320f
+        private const val CROSSFADE_DURATION_MS = CROSSFADE_END_MS - CROSSFADE_START_MS
+
+        /** Carrier opacity fade-in completes at 240 ms (in step with the
+         *  spring's first overshoot). */
+        private const val CARRIER_FADE_IN_END_MS = 240f
+
+        // Sonar timing — four evenly-placed rings spanning a 3-second
+        // window (0–3000ms). 750ms spacing between starts; each ring's
+        // lifetime is also 750ms so they tile without dead air. Each ring
+        // ramps in for 80ms (fade-in to peak), then expands + fades over
+        // 670ms (compressed from the original 800ms so the lifetime fits
+        // the spacing). Peak opacity is fully opaque (1.0) so the ring
+        // reads as a hard line at the moment of the ping, then fades to 0
+        // as it expands.
+        private val RING_SPECS: List<RingSpec> = run {
+            val spacing = 750f
+            val lifetime = 750f
+            val fadeInMs = 80f
+            val opacity = 1.0f
+            val endScale = 3.7f
+            List(4) { i ->
+                val start = i * spacing
+                RingSpec(
+                    startMs = start,
+                    peakMs = start + fadeInMs,
+                    endMs = start + lifetime,
+                    peakOpacity = opacity,
+                    endScale = endScale,
+                )
+            }
+        }
+
+        /** Shared ring geometry. Start border is 15dp — at the smallest
+         *  scale the stroke is wider than the ring's inner hole, so the
+         *  ping reads as a nearly-solid disc that then opens up into an
+         *  expanding ring as it scales and the stroke tapers to 0.5dp. */
+        private const val RING_START_SCALE = 0.6f
+        private const val RING_PEAK_SCALE = 1.28f
+        private const val RING_START_BORDER_DP = 15f
+        private const val RING_END_BORDER_DP = 0.5f
+        /** Dark-grey piping on each side of the white ring stroke. The
+         *  border stroke uses [borderDp] + 2 × this so 1dp of grey peeks
+         *  out at both the inner and outer edge of the white. */
+        private const val RING_BORDER_PIPE_DP = 1f
+
+        /** Material-standard ease-in curve (cubic-bezier(0.4, 0, 1, 1)) —
+         *  starts slow, accelerates into the end. Applied to the travel
+         *  segment so the icon eases off its hover and accelerates into
+         *  the wall before the squash. */
+        private val EASE_IN: Interpolator = PathInterpolator(0.4f, 0f, 1f, 1f)
+        /** Material-standard ease-out curve (cubic-bezier(0, 0, 0.2, 1)) —
+         *  starts fast, decelerates as it approaches the end. Paired with
+         *  EASE_IN on the undulation's down-segment to give the up-down
+         *  arc a sine-like silhouette without extra keyframes. */
+        private val EASE_OUT: Interpolator = PathInterpolator(0f, 0f, 0.2f, 1f)
+
+        /** Peak scale of the slow undulation that runs between the spring
+         *  pop-in and the travel-to-dock. Matches the spring's overshoot
+         *  peak (1.40) for a consistent "swell" height, but reached over
+         *  ~740ms rather than the spring's ~240ms. */
+        private const val UNDULATION_PEAK_SCALE = 1.40f
+
+        /** Carrier keyframes:
+         *
+         *    0 –  720 ms  spring pop-in (spec'd 4-keyframe overshoot)
+         *  720 – 1860 ms  undulation 1 (1.286 → 1.40 → 1.286, ease-out
+         *                 then ease-in, ~sine half-cycle each way)
+         * 1860 – 3000 ms  undulation 2 (same shape)
+         * 3000 – 3560 ms  travel + squash + rebound + settle. The travel
+         *                 segment eases in from the second undulation's
+         *                 return, so the icon starts the slide slowly
+         *                 right as the last sonar finishes.
+         *
+         * The two undulations END precisely at 3000 ms — there's no still
+         * hold between them and the travel; the second cycle's return-to-
+         * rest is the same frame the travel starts moving.
+         */
+        private val CARRIER_KEYFRAMES = listOf(
+            // Spring pop-in
+            CarrierKeyframe(0f,    -ENTRY_OFFSET_DP, 0.40f, 0.40f),
+            CarrierKeyframe(240f,  -ENTRY_OFFSET_DP, 1.40f, 1.40f),
+            CarrierKeyframe(480f,  -ENTRY_OFFSET_DP, 1.20f, 1.20f),
+            CarrierKeyframe(720f,  -ENTRY_OFFSET_DP, ENTRY_SETTLE_SCALE, ENTRY_SETTLE_SCALE),
+            // Undulation 1 — up (ease-out) to peak, then down (ease-in).
+            CarrierKeyframe(1290f, -ENTRY_OFFSET_DP, UNDULATION_PEAK_SCALE, UNDULATION_PEAK_SCALE, easeIn = EASE_OUT),
+            CarrierKeyframe(1860f, -ENTRY_OFFSET_DP, ENTRY_SETTLE_SCALE, ENTRY_SETTLE_SCALE, easeIn = EASE_IN),
+            // Undulation 2 — same shape; the return frame at 3000 ms is the
+            // same frame travel starts, so the icon flows straight from
+            // breathing into sliding without a still beat between.
+            CarrierKeyframe(2430f, -ENTRY_OFFSET_DP, UNDULATION_PEAK_SCALE, UNDULATION_PEAK_SCALE, easeIn = EASE_OUT),
+            CarrierKeyframe(3000f, -ENTRY_OFFSET_DP, ENTRY_SETTLE_SCALE, ENTRY_SETTLE_SCALE, easeIn = EASE_IN),
+            // Travel — eases in so the icon picks up speed before slamming
+            // into the wall.
+            CarrierKeyframe(3240f,  0.40f * 56f, 1.05f, 1.05f, easeIn = EASE_IN),
+            // Squash into the wall (horizontal squash, vertical stretch).
+            CarrierKeyframe(3400f,  0.88f * 56f, 0.86f, 1.12f),
+            // Rebound (slight overshoot the other way).
+            CarrierKeyframe(3500f,  0.70f * 56f, 1.06f, 0.94f),
+            // Settled at the dock pose.
+            CarrierKeyframe(3560f,  DOCK_TRANSLATE_DP, 1.0f, 1.0f),
+        )
+    }
+}

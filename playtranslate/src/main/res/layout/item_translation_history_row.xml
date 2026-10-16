@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Translation-history row: meta line (time · backend) with an inline
+     action cluster — add-to-Anki / delete — then source and translation.
+     Copy is a long-press on the row (no button). The cluster mirrors
+     WordResultCell's header buttons (36×40dp borderless slots, 16dp gaps,
+     22dp icons) so History and the word-definition cells share one action
+     idiom; icons tint like the meta label. Divider hidden on the last row
+     by the adapter. -->
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:id="@+id/historyRowContent"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="?attr/selectableItemBackground"
+        android:paddingHorizontal="@dimen/pt_row_h_padding"
+        android:paddingTop="6dp"
+        android:paddingBottom="@dimen/pt_row_v_padding">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/tvHistoryMeta"
+                style="@style/Text.PT.RowSubtitle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:singleLine="true"
+                android:ellipsize="end"
+                android:textColor="?attr/ptTextHint" />
+
+            <FrameLayout
+                android:id="@+id/btnHistoryAnki"
+                android:layout_width="36dp"
+                android:layout_height="40dp"
+                android:layout_marginStart="16dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/history_action_anki">
+
+                <ImageView
+                    android:layout_width="22dp"
+                    android:layout_height="22dp"
+                    android:layout_gravity="center"
+                    android:src="@drawable/ic_card_stack_add"
+                    android:importantForAccessibility="no"
+                    app:tint="?attr/ptTextHint" />
+            </FrameLayout>
+
+            <FrameLayout
+                android:id="@+id/btnHistoryDelete"
+                android:layout_width="36dp"
+                android:layout_height="40dp"
+                android:layout_marginStart="16dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/history_action_delete">
+
+                <ImageView
+                    android:layout_width="22dp"
+                    android:layout_height="22dp"
+                    android:layout_gravity="center"
+                    android:src="@drawable/ic_delete"
+                    android:importantForAccessibility="no"
+                    app:tint="?attr/ptTextHint" />
+            </FrameLayout>
+
+            <!-- Non-interactive "opens detail" affordance — taps fall
+                 through to the row (WordResultCell's chevron idiom). -->
+            <FrameLayout
+                android:layout_width="36dp"
+                android:layout_height="40dp"
+                android:layout_marginStart="16dp">
+
+                <ImageView
+                    android:layout_width="22dp"
+                    android:layout_height="22dp"
+                    android:layout_gravity="center"
+                    android:src="@drawable/ic_chevron_right"
+                    android:importantForAccessibility="no"
+                    app:tint="?attr/ptTextHint" />
+            </FrameLayout>
+        </LinearLayout>
+
+        <!-- +2sp over the row styles (15/13): reading text, not row chrome. -->
+        <TextView
+            android:id="@+id/tvHistorySource"
+            style="@style/Text.PT.RowTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:textSize="17sp"
+            android:maxLines="3"
+            android:ellipsize="end" />
+
+        <TextView
+            android:id="@+id/tvHistoryTranslation"
+            style="@style/Text.PT.RowSubtitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:textSize="15sp"
+            android:maxLines="3"
+            android:ellipsize="end" />
+    </LinearLayout>
+
+    <View
+        android:id="@+id/historyRowDivider"
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginStart="@dimen/pt_row_h_padding"
+        android:background="?attr/ptDivider" />
+
+</LinearLayout>

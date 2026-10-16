@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    AccessibilityService configuration for PlayTranslate.
+
+    canTakeScreenshot (API 31+) is required to call takeScreenshot() on Android 12+.
+    On Android 11 (API 30), takeScreenshot() works without it.
+    The attribute is silently ignored on older versions so it is safe to include.
+
+    accessibilityEventTypes / accessibilityFlags are set to minimal values
+    because PlayTranslate does not need to read UI content — it only takes screenshots.
+-->
+<accessibility-service
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/accessibility_service_description"
+    android:summary="@string/accessibility_service_summary"
+    android:accessibilityEventTypes="typeWindowStateChanged"
+    android:accessibilityFlags="flagDefault|flagRequestFilterKeyEvents|flagRetrieveInteractiveWindows"
+    android:canRequestFilterKeyEvents="true"
+    android:canTakeScreenshot="true"
+    android:notificationTimeout="100" />

@@ -1,0 +1,787 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.coordinatorlayout.widget.CoordinatorLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fitsSystemWindows="true">
+
+    <!-- Scrollable content. No appbar scrolling behavior: the toolbar below
+         is a fade-in overlay, so the content owns the full height and
+         scrolls under the bar. -->
+    <androidx.core.widget.NestedScrollView
+        android:id="@+id/settingsScrollView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clipToPadding="false">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="@dimen/pt_section_h_padding"
+            android:paddingTop="4dp"
+            android:paddingBottom="20dp">
+
+            <!-- ══════════════════════════════════════════════════════ -->
+            <!-- LANGUAGE SELECTION — two centered button-cells with a -->
+            <!--   chevron between them; no section header, no per-    -->
+            <!--   cell title. Horizontal margin = pt_section_h_padding -->
+            <!--   on top of the parent's pt_section_h_padding, so the  -->
+            <!--   side buffer is 2× the standard 14dp (28dp from each -->
+            <!--   screen edge).                                       -->
+            <!-- ══════════════════════════════════════════════════════ -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:layout_marginBottom="8dp"
+                android:layout_marginHorizontal="@dimen/pt_section_h_padding"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/rowSourceLang"
+                    android:layout_width="0dp"
+                    android:layout_height="44dp"
+                    android:layout_weight="1"
+                    android:clickable="true"
+                    android:focusable="true"
+                    app:cardBackgroundColor="?attr/ptSurface"
+                    app:cardCornerRadius="@dimen/pt_radius"
+                    app:cardElevation="0dp"
+                    app:strokeWidth="0dp">
+
+                    <TextView
+                        android:id="@+id/tvSourceLangValue"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:gravity="center"
+                        android:paddingHorizontal="8dp"
+                        android:fontFamily="sans-serif"
+                        android:textColor="?attr/ptTextMuted"
+                        style="@style/Text.PT.RowTitle" />
+                </com.google.android.material.card.MaterialCardView>
+
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:layout_marginHorizontal="12dp"
+                    android:src="@drawable/ic_arrow_forward"
+                    app:tint="?attr/ptTextMuted"
+                    android:importantForAccessibility="no" />
+
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/rowTargetLang"
+                    android:layout_width="0dp"
+                    android:layout_height="44dp"
+                    android:layout_weight="1"
+                    android:clickable="true"
+                    android:focusable="true"
+                    app:cardBackgroundColor="?attr/ptSurface"
+                    app:cardCornerRadius="@dimen/pt_radius"
+                    app:cardElevation="0dp"
+                    app:strokeWidth="0dp">
+
+                    <TextView
+                        android:id="@+id/tvTargetLangValue"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:gravity="center"
+                        android:paddingHorizontal="8dp"
+                        android:fontFamily="sans-serif"
+                        android:textColor="?attr/ptTextMuted"
+                        style="@style/Text.PT.RowTitle" />
+                </com.google.android.material.card.MaterialCardView>
+
+            </LinearLayout>
+
+            <!-- Update language packs — separate card so warning tint
+                 (when there are stale packs) doesn't bleed onto Source/Target.
+                 Sits with the language buttons (above the power section). -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardUpdateLanguagePacks"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                app:cardBackgroundColor="?attr/ptCard"
+                app:cardCornerRadius="@dimen/pt_radius"
+                app:cardElevation="0dp"
+                app:strokeColor="?attr/ptDivider"
+                app:strokeWidth="1dp">
+
+                <include layout="@layout/settings_row_value_multiline"
+                    android:id="@+id/rowUpdateLanguagePacks" />
+
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Download offline models — Concept B. Same styling/position as the
+                 Update card; revealed by SettingsRenderer when the active pair
+                 lacks offline translation (a "go offline" nudge — the app still
+                 works online). Starts gone; the readiness check is async. -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardOfflineModels"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:visibility="gone"
+                app:cardBackgroundColor="?attr/ptCard"
+                app:cardCornerRadius="@dimen/pt_radius"
+                app:cardElevation="0dp"
+                app:strokeColor="?attr/ptDivider"
+                app:strokeWidth="1dp">
+
+                <include layout="@layout/settings_row_value_multiline"
+                    android:id="@+id/rowOfflineModels" />
+
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- ══════════════════════════════════════════════════════ -->
+            <!-- TOP SECTION — one card containing:                    -->
+            <!--   • Power cell (PlayTranslate on/off; subtitle =      -->
+            <!--     capture-permission truth)                         -->
+            <!--   • Show on-screen controls (icon toggle that takes   -->
+            <!--     the power cell's slot on a11y dual-screen)        -->
+            <!--   • Audio recording repair row (only when game-audio  -->
+            <!--     needs its MediaProjection consent re-granted)     -->
+            <!--   • "On the floating icon" gesture footer             -->
+            <!-- No section header. The power cell answers "is it      -->
+            <!-- ready?" and the on-screen controls answer "how do I   -->
+            <!-- use it?" — they belong in the same table.             -->
+            <!-- The footer's text + icon-preview dim to 50% alpha     -->
+            <!-- while the power cell is OFF, and the power cell       -->
+            <!-- shimmers in place (see SettingsRenderer.              -->
+            <!-- refreshCaptureLifecycleButton).                       -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardOnScreenControls"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                app:cardBackgroundColor="?attr/ptCard"
+                app:cardCornerRadius="@dimen/pt_radius"
+                app:cardElevation="0dp"
+                app:strokeColor="?attr/ptOutline"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <!-- Power cell (PlayTranslate on/off). Whole row is the
+                         tap target; trailing switch follows the row tap.
+                         Replaces the old standalone "Turn On / Turn Off"
+                         button — see SettingsRenderer.stylePowerCard(). The
+                         whole toolbar (title + Turn On/Off button) fades in
+                         as the user scrolls past this card. -->
+                    <include
+                        android:id="@+id/powerCard"
+                        layout="@layout/settings_row_power" />
+
+                    <!-- Game Screen Controls — takes the power cell's slot on
+                         the accessibility backend in dual-screen, where
+                         capture is always on and the floating icon's
+                         visibility is the only thing left to toggle. Backed
+                         by Prefs.showOverlayIcon. Shown / hidden in lock-step
+                         with the power cell (never both at once) by
+                         SettingsRenderer.refreshCaptureLifecycleButton; the
+                         row owns the tap, the switch follows. -->
+                    <LinearLayout
+                        android:id="@+id/rowGameScreenControls"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:background="?attr/selectableItemBackground"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center_vertical"
+                        android:minHeight="@dimen/pt_row_min_height"
+                        android:orientation="horizontal"
+                        android:paddingHorizontal="@dimen/pt_row_h_padding"
+                        android:paddingVertical="9dp"
+                        android:visibility="gone">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="16dp"
+                            android:text="@string/game_screen_controls_title"
+                            style="@style/Text.PT.RowTitle" />
+
+                        <!-- Non-clickable; the row owns the tap. -->
+                        <com.google.android.material.materialswitch.MaterialSwitch
+                            android:id="@+id/switchGameScreenControls"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:clickable="false"
+                            android:focusable="false"
+                            app:materialThemeOverlay="@style/Widget.PlayTranslate.MaterialSwitch" />
+
+                    </LinearLayout>
+
+                    <!-- Audio recording row — shown while game-audio
+                         recording (Prefs.recordGameAudio) is on and the
+                         session is active. Title (regular text color)
+                         tracks state — "Start recording audio" (a verb:
+                         the tap IS the action) vs "Recording audio" (a
+                         status claim) — and the trailing record glyph is
+                         the state light: ptTextHint (recessed, dark) vs
+                         ptAccent (recording). Tap: consent request while
+                         dark (the recorder never prompts by itself), Anki
+                         settings — where the feature switch lives — while
+                         recording. State + visibility owned by
+                         SettingsRenderer.refreshCaptureLifecycleButton,
+                         divider in lock-step. -->
+                    <include layout="@layout/settings_row_divider"
+                        android:id="@+id/dividerAudioRecording" />
+
+                    <LinearLayout
+                        android:id="@+id/rowAudioRecording"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:background="?attr/selectableItemBackground"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center_vertical"
+                        android:minHeight="@dimen/pt_row_min_height"
+                        android:orientation="horizontal"
+                        android:paddingHorizontal="@dimen/pt_row_h_padding"
+                        android:paddingVertical="@dimen/pt_row_v_padding">
+
+                        <TextView
+                            android:id="@+id/tvAudioRecordingTitle"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="12dp"
+                            android:text="@string/audio_recording_row_start"
+                            style="@style/Text.PT.RowTitle" />
+
+                        <ImageView
+                            android:id="@+id/ivAudioRecordingGlyph"
+                            android:layout_width="22dp"
+                            android:layout_height="22dp"
+                            android:src="@drawable/ic_record_circle"
+                            android:importantForAccessibility="no" />
+
+                    </LinearLayout>
+
+                    <!-- "On the floating icon" — sits at the bottom of the
+                         top section as a footer (same surface tint + hairline
+                         top divider as the capture-display footer; see
+                         bg_word_tatoeba_attribution). The whole row is the
+                         tap target for the gesture picker page (ripple on
+                         the foreground so the footer keeps its background);
+                         the chevron at the end is the affordance. The
+                         runtime dim/recolour is driven by
+                         refreshCaptureLifecycleButton. -->
+                    <LinearLayout
+                        android:id="@+id/rowOverlayIcon"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/bg_word_tatoeba_attribution"
+                        android:foreground="?attr/selectableItemBackground"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:baselineAligned="false"
+                        android:gravity="center_vertical"
+                        android:minHeight="@dimen/pt_row_min_height"
+                        android:orientation="horizontal"
+                        android:paddingHorizontal="@dimen/pt_row_h_padding"
+                        android:paddingVertical="12dp">
+
+                        <!-- Text container: GroupHeader-styled title above the
+                             icon preview and the three-line gesture table
+                             beside it. Container id is kept so
+                             refreshCaptureLifecycleButton can dim or recolor
+                             everything inside in lock-step. -->
+                        <LinearLayout
+                            android:id="@+id/overlayIconTextContent"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical"
+                            android:layout_marginEnd="16dp">
+
+                            <TextView
+                                android:id="@+id/tvRowTitle"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                style="@style/Text.PT.GroupHeader" />
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="6dp"
+                                android:baselineAligned="false"
+                                android:orientation="horizontal">
+
+                                <!-- The floating icon's visible edge slice, drawn
+                                     as if docked on this slot's start edge: the
+                                     slot is as wide as the slice and as tall as
+                                     the gesture table, and
+                                     buildOverlayIconPreview offsets the icon view
+                                     so only the slice lands inside it. -->
+                                <FrameLayout
+                                    android:id="@+id/overlayIconPreviewSlot"
+                                    android:layout_width="16dp"
+                                    android:layout_height="match_parent"
+                                    android:layout_marginEnd="12dp"
+                                    android:visibility="gone" />
+
+                                <!-- Three gesture lines, one column each for the
+                                     gesture icon, the gesture word (bold) and the
+                                     action bound to it ("Hold  Open the quick
+                                     menu"). A TableLayout so the action column
+                                     lines up across lines whatever the gesture
+                                     words' widths in a locale; that column shrinks
+                                     to wrap. refreshCaptureLifecycleButton binds
+                                     the action titles from Prefs and the colours:
+                                     lit = icon + word ptAccent, action ptText;
+                                     dim = everything ptTextHint. -->
+                                <TableLayout
+                                    android:id="@+id/gestureList"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:shrinkColumns="2">
+
+                                    <TableRow
+                                        android:gravity="center_vertical">
+
+                                        <ImageView
+                                            android:id="@+id/iconGestureDrag"
+                                            android:layout_width="20dp"
+                                            android:layout_height="20dp"
+                                            android:layout_marginEnd="10dp"
+                                            android:importantForAccessibility="no"
+                                            android:src="@drawable/ic_touch_triple" />
+
+                                        <TextView
+                                            android:id="@+id/tvGestureDrag"
+                                            android:layout_width="wrap_content"
+                                            android:layout_height="wrap_content"
+                                            android:layout_marginEnd="8dp"
+                                            android:text="@string/icon_gesture_drag"
+                                            android:textColor="?attr/ptText"
+                                            android:textSize="15sp"
+                                            android:textStyle="bold" />
+
+                                        <TextView
+                                            android:id="@+id/tvActionDrag"
+                                            android:layout_width="wrap_content"
+                                            android:layout_height="wrap_content"
+                                            android:textColor="?attr/ptText"
+                                            android:textSize="15sp" />
+                                    </TableRow>
+
+                                    <TableRow
+                                        android:layout_marginTop="4dp"
+                                        android:gravity="center_vertical">
+
+                                        <ImageView
+                                            android:id="@+id/iconGestureHold"
+                                            android:layout_width="20dp"
+                                            android:layout_height="20dp"
+                                            android:layout_marginEnd="10dp"
+                                            android:importantForAccessibility="no"
+                                            android:src="@drawable/ic_touch_long" />
+
+                                        <TextView
+                                            android:id="@+id/tvGestureHold"
+                                            android:layout_width="wrap_content"
+                                            android:layout_height="wrap_content"
+                                            android:layout_marginEnd="8dp"
+                                            android:text="@string/icon_gesture_hold"
+                                            android:textColor="?attr/ptText"
+                                            android:textSize="15sp"
+                                            android:textStyle="bold" />
+
+                                        <TextView
+                                            android:id="@+id/tvActionHold"
+                                            android:layout_width="wrap_content"
+                                            android:layout_height="wrap_content"
+                                            android:textColor="?attr/ptText"
+                                            android:textSize="15sp" />
+                                    </TableRow>
+
+                                    <TableRow
+                                        android:layout_marginTop="4dp"
+                                        android:gravity="center_vertical">
+
+                                        <ImageView
+                                            android:id="@+id/iconGestureTap"
+                                            android:layout_width="20dp"
+                                            android:layout_height="20dp"
+                                            android:layout_marginEnd="10dp"
+                                            android:importantForAccessibility="no"
+                                            android:src="@drawable/ic_touch_app" />
+
+                                        <TextView
+                                            android:id="@+id/tvGestureTap"
+                                            android:layout_width="wrap_content"
+                                            android:layout_height="wrap_content"
+                                            android:layout_marginEnd="8dp"
+                                            android:text="@string/icon_gesture_tap"
+                                            android:textColor="?attr/ptText"
+                                            android:textSize="15sp"
+                                            android:textStyle="bold" />
+
+                                        <TextView
+                                            android:id="@+id/tvActionTap"
+                                            android:layout_width="wrap_content"
+                                            android:layout_height="wrap_content"
+                                            android:textColor="?attr/ptText"
+                                            android:textSize="15sp" />
+                                    </TableRow>
+                                </TableLayout>
+                            </LinearLayout>
+                        </LinearLayout>
+
+                        <ImageView
+                            android:id="@+id/ivOverlayIconChevron"
+                            android:layout_width="18dp"
+                            android:layout_height="18dp"
+                            android:layout_marginStart="8dp"
+                            android:src="@drawable/ic_chevron_right"
+                            app:tint="?attr/ptTextMuted"
+                            android:importantForAccessibility="no" />
+
+                    </LinearLayout>
+
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- ══════════════════════════════════════════════════════ -->
+            <!-- CONFIGURE — drill-down into the settings sub-pages.   -->
+            <!--   Cells are added here as each page's migration lands; -->
+            <!--   the section is hidden entirely during onboarding     -->
+            <!--   (hideDismiss) — see SettingsRenderer.setupConfigureSection. -->
+            <!-- ══════════════════════════════════════════════════════ -->
+
+            <LinearLayout
+                android:id="@+id/configureSection"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <include layout="@layout/settings_group_header"
+                    android:id="@+id/headerConfigure" />
+
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:cardBackgroundColor="?attr/ptCard"
+                    app:cardCornerRadius="@dimen/pt_radius"
+                    app:cardElevation="0dp"
+                    app:strokeColor="?attr/ptDivider"
+                    app:strokeWidth="1dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
+
+                        <include layout="@layout/settings_row_hub"
+                            android:id="@+id/rowConfigCaptureOverlay" />
+
+                        <include layout="@layout/settings_row_hub"
+                            android:id="@+id/rowConfigTranslationServices" />
+
+                        <include layout="@layout/settings_row_hub"
+                            android:id="@+id/rowConfigHotkeys" />
+
+                        <include layout="@layout/settings_row_hub"
+                            android:id="@+id/rowConfigAnki" />
+
+                        <include layout="@layout/settings_row_hub"
+                            android:id="@+id/rowConfigYomitan" />
+
+                        <include layout="@layout/settings_row_hub"
+                            android:id="@+id/rowConfigTts" />
+
+                        <include layout="@layout/settings_row_hub"
+                            android:id="@+id/rowConfigAppearance" />
+
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+            </LinearLayout>
+
+            <!-- ══════════════════════════════════════════════════════ -->
+            <!-- TOOLS — standalone utilities (e.g. the dictionary).   -->
+            <!-- ══════════════════════════════════════════════════════ -->
+
+            <include layout="@layout/settings_group_header"
+                android:id="@+id/headerTools" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:cardBackgroundColor="?attr/ptCard"
+                app:cardCornerRadius="@dimen/pt_radius"
+                app:cardElevation="0dp"
+                app:strokeColor="?attr/ptDivider"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <include layout="@layout/settings_row_hub"
+                        android:id="@+id/rowToolCamera" />
+
+                    <include layout="@layout/settings_row_hub"
+                        android:id="@+id/rowToolImportImage" />
+
+                    <include layout="@layout/settings_row_hub"
+                        android:id="@+id/rowToolHistory" />
+
+                    <include layout="@layout/settings_row_hub"
+                        android:id="@+id/rowToolDictionary" />
+
+                </LinearLayout>
+
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- ══════════════════════════════════════════════════════ -->
+            <!-- SUPPORT                                               -->
+            <!-- ══════════════════════════════════════════════════════ -->
+
+            <include layout="@layout/settings_group_header"
+                android:id="@+id/headerSupport" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:cardBackgroundColor="?attr/ptCard"
+                app:cardCornerRadius="@dimen/pt_radius"
+                app:cardElevation="0dp"
+                app:strokeColor="?attr/ptDivider"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <include layout="@layout/settings_row_hub"
+                        android:id="@+id/rowCheckUpdates" />
+
+                    <include layout="@layout/settings_row_hub"
+                        android:id="@+id/rowDiscord" />
+
+                    <include layout="@layout/settings_row_hub"
+                        android:id="@+id/rowKeepRunning" />
+
+                    <include layout="@layout/settings_row_hub"
+                        android:id="@+id/rowReportBug" />
+
+                    <include layout="@layout/settings_row_hub"
+                        android:id="@+id/rowDonate" />
+
+                </LinearLayout>
+
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- ══════════════════════════════════════════════════════ -->
+            <!-- DEBUG (debug builds only)                             -->
+            <!-- ══════════════════════════════════════════════════════ -->
+
+            <LinearLayout
+                android:id="@+id/llDebugSection"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <include layout="@layout/settings_group_header"
+                    android:id="@+id/headerDebug" />
+
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:cardBackgroundColor="?attr/ptCard"
+                    app:cardCornerRadius="@dimen/pt_radius"
+                    app:cardElevation="0dp"
+                    app:strokeColor="?attr/ptDivider"
+                    app:strokeWidth="1dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
+
+                        <include layout="@layout/settings_row_switch"
+                            android:id="@+id/rowForceSingleScreen" />
+
+                        <include layout="@layout/settings_row_divider" />
+
+                        <include layout="@layout/settings_row_switch"
+                            android:id="@+id/rowShowOcrBoxes" />
+
+                        <include layout="@layout/settings_row_divider" />
+
+                        <include layout="@layout/settings_row_switch"
+                            android:id="@+id/rowDetectionLog" />
+
+                        <include layout="@layout/settings_row_divider" />
+
+                        <include layout="@layout/settings_row_switch"
+                            android:id="@+id/rowLiveModeDebug" />
+
+                        <include layout="@layout/settings_row_divider" />
+
+                        <include layout="@layout/settings_row_switch"
+                            android:id="@+id/rowSaveOcrSeed" />
+
+                        <include layout="@layout/settings_row_divider" />
+
+                        <include layout="@layout/settings_row_switch"
+                            android:id="@+id/rowShortTextRouting" />
+
+                        <include layout="@layout/settings_row_divider" />
+
+                        <include layout="@layout/settings_row_switch"
+                            android:id="@+id/rowForceMmapWeights" />
+
+                        <include layout="@layout/settings_row_divider" />
+
+                        <include layout="@layout/settings_row_switch"
+                            android:id="@+id/rowLogGrouping" />
+
+                        <include layout="@layout/settings_row_divider" />
+
+                        <include layout="@layout/settings_row_switch"
+                            android:id="@+id/rowAngleGate" />
+
+                        <include layout="@layout/settings_row_divider" />
+
+                        <include layout="@layout/settings_row_switch"
+                            android:id="@+id/rowLogTrace" />
+
+                        <include layout="@layout/settings_row_divider" />
+
+                        <include layout="@layout/settings_row_switch"
+                            android:id="@+id/rowUsePaddleOcr" />
+
+                        <include layout="@layout/settings_row_divider" />
+
+                        <include layout="@layout/settings_row_switch"
+                            android:id="@+id/rowPaddleServerRec" />
+
+                        <include layout="@layout/settings_row_divider" />
+
+                        <include layout="@layout/settings_row_switch"
+                            android:id="@+id/rowPaddleDumpCrops" />
+
+                        <include layout="@layout/settings_row_divider" />
+
+                        <include layout="@layout/settings_row_action"
+                            android:id="@+id/rowForceCrash" />
+
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+            </LinearLayout>
+
+            <!-- No footer. The version label that used to close the screen moved
+                 into the Support section's "Check for updates" cell, so the
+                 version is stated once, next to the action that acts on it. The
+                 container's own paddingBottom (plus the nav-bar inset the scroll
+                 view applies) is the bottom slack, same as the sub-screens. -->
+
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+
+    <!-- Toolbar. Declared AFTER the scroll view so it draws on top of the
+         content (elevation stays pinned to 0 — the hairline divider below
+         the bar separates it from content instead of a shadow). The whole
+         bar rests hidden and is faded in by
+         SettingsRenderer.updateToolbarCrossfade once the user scrolls past
+         the power card — the bar (title + Turn On/Off button together) is
+         the sticky reminder that takes over from the card. Two independent
+         visibility axes:
+           - outer AppBarLayout: scroll crossfade (alpha, INVISIBLE at 0 so
+             a hidden bar never intercepts touches);
+           - inner MaterialToolbar (+ divider): the mode gate
+             (SettingsBottomSheet.refreshToolbarVisibility) — GONE on the
+             accessibility backend in dual-screen, where capture is always
+             on and there is nothing to start/stop. -->
+    <com.google.android.material.appbar.AppBarLayout
+        android:id="@+id/settingsToolbar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="?attr/ptBg"
+        android:stateListAnimator="@null"
+        android:alpha="0"
+        android:visibility="invisible"
+        app:elevation="0dp"
+        app:liftOnScroll="false">
+
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/settingsToolbarInner"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:background="?attr/ptBg"
+            android:visibility="gone"
+            app:titleTextColor="?attr/ptText">
+
+            <TextView
+                android:id="@+id/tvSettingsTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/settings_title"
+                android:textColor="?attr/ptText"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/btnCloseSettings"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_gravity="end"
+                android:text="@string/dialog_close_glyph"
+                android:textColor="?attr/ptText"
+                android:textSize="18sp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp" />
+
+            <com.playtranslate.ui.ShimmerButton
+                android:id="@+id/btnCaptureLifecycle"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="40dp"
+                android:layout_gravity="end|center_vertical"
+                android:layout_marginEnd="8dp"
+                android:textAllCaps="false"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:paddingStart="12dp"
+                android:paddingEnd="14dp"
+                app:icon="@drawable/ic_mode_off_on"
+                app:iconSize="20dp"
+                app:iconPadding="4dp"
+                app:iconGravity="textStart"
+                app:cornerRadius="@dimen/pt_radius"
+                android:visibility="gone" />
+
+        </com.google.android.material.appbar.MaterialToolbar>
+
+        <!-- Hairline under the overlaying bar — the page-background bar
+             needs an edge against the content scrolling beneath it.
+             Toggled in lock-step with settingsToolbarInner. -->
+        <View
+            android:id="@+id/settingsToolbarDivider"
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="?attr/ptDivider"
+            android:visibility="gone" />
+
+    </com.google.android.material.appbar.AppBarLayout>
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

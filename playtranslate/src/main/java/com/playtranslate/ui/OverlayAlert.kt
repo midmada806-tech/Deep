@@ -1,0 +1,514 @@
+package com.playtranslate.ui
+
+import android.app.Activity
+import android.app.Application
+import android.app.Dialog
+import android.content.Context
+import android.content.res.ColorStateList
+import android.graphics.Color
+import android.graphics.PixelFormat
+import android.graphics.drawable.GradientDrawable
+import android.os.Bundle
+import android.view.Gravity
+import android.view.View
+import android.view.ViewGroup
+import android.view.WindowManager
+import android.view.animation.DecelerateInterpolator
+import android.widget.Button
+import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.TextView
+import androidx.activity.ComponentActivity
+import androidx.activity.ComponentDialog
+import androidx.activity.OnBackPressedCallback
+import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.widget.TextViewCompat
+import com.playtranslate.PlayTranslateApplication
+import com.playtranslate.R
+import com.playtranslate.overlay.OverlayHost
+import com.playtranslate.overlay.OverlayPlacement
+import com.playtranslate.overlayThemedContext
+import com.playtranslate.themeColor
+
+/**
+ * A reusable alert dialog that can be attached either to a capture-overlay
+ * window (via the (context, overlayHost, wm, displayId) [Builder] constructor
+ * + [Builder.showAsOverlay]) or above whichever PlayTranslate surface is on
+ * top — a showing dialog's own window, else the foregrounded activity (via
+ * [Builder.show]). Matches the visual style of the floating icon hide
+ * confirmation dialog.
+ *
+ * The foreground-attached path detaches itself when its host activity pauses
+ * (sub-Activity nav, app backgrounded, etc.) so the alert dies cleanly
+ * instead of becoming a hidden ghost behind the new top window. Back-press
+ * dismisses the same way. The cancel handler ([Builder.addCancelButton]'s
+ * onClick) fires on both user-initiated dismissal (button/scrim/back) AND
+ * lifecycle pause — but receives a [DismissReason] so callers whose cancel
+ * action runs control flow (advance a setup chain, etc.) can branch on USER
+ * to avoid silently advancing past a decision the user never made.
+ */
+class OverlayAlert private constructor(
+    rawContext: Context,
+    private val title: String,
+    private val message: String?,
+    private val buttons: List<ButtonConfig>,
+    private val showAppIcon: Boolean,
+    private val onCancel: ((DismissReason) -> Unit)?,
+) {
+    private val context: Context = overlayThemedContext(rawContext)
+
+    data class ButtonConfig(
+        val label: String,
+        val color: Int,
+        val textColor: Int,
+        /** Optional drawable shown at the LEFT of the button label (e.g. a download
+         *  icon), tinted to [textColor]. */
+        val leadingIconRes: Int? = null,
+        val onClick: () -> Unit,
+    )
+
+    class Builder(rawContext: Context) {
+        private val context: Context = overlayThemedContext(rawContext)
+        private var title = ""
+        private var message: String? = null
+        private val buttons = mutableListOf<ButtonConfig>()
+        private var showAppIcon = false
+        /** Set by [addCancelButton]. Invoked on cancel-button tap, scrim
+         *  tap, back-press, AND host-activity pause — all paths receive a
+         *  [DismissReason] so callers with side effects can branch on USER. */
+        private var onCancel: ((DismissReason) -> Unit)? = null
+
+        /** Overlay-window path. [overlayHost] stamps the window with the
+         *  active capture backend's type (TYPE_ACCESSIBILITY_OVERLAY or
+         *  TYPE_APPLICATION_OVERLAY), so the alert displays on either
+         *  backend — pass the host owned by the surface presenting the
+         *  alert. Finish with [showAsOverlay]. The activity path uses the
+         *  primary [Builder] constructor + [show] instead. */
+        constructor(
+            context: Context,
+            overlayHost: OverlayHost,
+            wm: WindowManager,
+            displayId: Int,
+        ) : this(context) {
+            this.overlayHost = overlayHost
+            this.wm = wm
+            this.displayId = displayId
+        }
+
+        /** Set together by the overlay-window constructor — both null on the
+         *  activity path. [showAsOverlay] requires them; [show] ignores them. */
+        private var overlayHost: OverlayHost? = null
+        private var wm: WindowManager? = null
+        private var displayId: Int = android.view.Display.DEFAULT_DISPLAY
+
+        fun setTitle(title: String) = apply { this.title = title }
+        fun setMessage(message: String) = apply { this.message = message }
+
+        /** Shows the circular app-icon header above the title. Off by
+         *  default — on the app's utility popups the brand mark is just
+         *  noise, so callers opt in only where it belongs (currently only
+         *  the floating-icon Turn Off / Hide confirmation). */
+        fun showIcon() = apply { this.showAppIcon = true }
+
+        fun addButton(label: String, color: Int, textColor: Int = context.themeColor(R.attr.ptCard), leadingIconRes: Int? = null, onClick: () -> Unit) = apply {
+            buttons.add(ButtonConfig(label, color, textColor, leadingIconRes, onClick))
+        }
+
+        /** Adds a styled cancel button (divider background, ptText label).
+         *  [onClick] fires on cancel-button tap, scrim tap, back-press, AND
+         *  host-activity pause; the [DismissReason] tells callers which.
+         *  Use [DismissReason.USER] to gate side effects that should only
+         *  run when the user explicitly dismissed (e.g. advancing a setup
+         *  chain) — leaving [DismissReason.LIFECYCLE_PAUSE] to harmless
+         *  cleanup like UI-state refresh.
+         *  Action buttons (added via [addButton]) keep their own onClick
+         *  and do NOT invoke [onClick] here. */
+        fun addCancelButton(label: String = "Cancel", onClick: ((DismissReason) -> Unit)? = null) = apply {
+            onCancel = onClick
+            buttons.add(ButtonConfig(
+                label,
+                context.themeColor(R.attr.ptDivider),
+                context.themeColor(R.attr.ptText),
+                onClick = { onClick?.invoke(DismissReason.USER) },
+            ))
+        }
+
+        /** Shows the alert as a capture-overlay window through the host
+         *  supplied to the overlay-window constructor. */
+        fun showAsOverlay(): OverlayAlert {
+            val host = overlayHost ?: error(
+                "OverlayAlert.showAsOverlay() requires the " +
+                    "(context, overlayHost, wm, displayId) constructor"
+            )
+            val alert = OverlayAlert(context, title, message, buttons, showAppIcon, onCancel)
+            // wm is non-null whenever overlayHost is — both are set together
+            // by the overlay-window constructor.
+            alert.showAsOverlay(host, wm!!, displayId)
+            return alert
+        }
+
+        /** Shows above whichever PlayTranslate surface is currently on top: a
+         *  showing DialogFragment's own window if one is up (the full-screen
+         *  Settings sheet and its nested dialogs included), otherwise the
+         *  foregrounded activity's decorView. If no activity is resumed yet
+         *  (e.g. called from MainActivity.onCreate before its first onResume),
+         *  the attach is deferred to the next [Activity.onResume] via
+         *  [PlayTranslateApplication.runWithForegroundActivity].
+         *
+         *  Detaches and invokes the cancel handler if the host activity
+         *  pauses — so navigating to a sub-Activity or backgrounding the
+         *  app dismisses the alert instead of leaving it hidden behind the
+         *  new top window. Back-press dismisses the same way. */
+        fun show(): OverlayAlert {
+            val alert = OverlayAlert(context, title, message, buttons, showAppIcon, onCancel)
+            PlayTranslateApplication.runWithForegroundActivity { activity ->
+                if (alert.dismissed || activity.isFinishing || activity.isDestroyed) return@runWithForegroundActivity
+                alert.attachToForeground(activity)
+            }
+            return alert
+        }
+
+        /** Shows attached to the decorView of [dialog]'s own window, for an
+         *  explicit dialog target. [show] now auto-detects a showing
+         *  DialogFragment and layers above it, so prefer [show] unless you
+         *  must pin the alert to a specific [dialog] not reachable from the
+         *  foreground activity's fragment tree. */
+        fun showInDialog(dialog: Dialog): OverlayAlert {
+            val alert = OverlayAlert(context, title, message, buttons, showAppIcon, onCancel)
+            alert.showInDialog(dialog)
+            return alert
+        }
+
+        /** Shows as an in-window child of [parent] — the floating workspace's
+         *  modal layer ([com.playtranslate.ui.OverlayWorkspace]). In-window
+         *  rather than a sibling overlay window because MediaProjection's QTI
+         *  clamp dims a sibling to ~80% and it steals the host window's taps
+         *  (see [FontSizeRangePopover]). If the parent's window is torn down
+         *  while the alert is up (workspace dismissal), the cancel handler
+         *  fires with [DismissReason.LIFECYCLE_PAUSE]. */
+        fun showInParent(parent: ViewGroup): OverlayAlert {
+            val alert = OverlayAlert(context, title, message, buttons, showAppIcon, onCancel)
+            alert.showInParent(parent)
+            return alert
+        }
+    }
+
+    private var scrim: FrameLayout? = null
+    private var dismissAction: (() -> Unit)? = null
+
+    /** True while the alert is actually attached to a window. False after
+     *  dismiss — and, crucially, after a [Builder.showAsOverlay] whose
+     *  window add FAILED: callers that gate behavior on an alert being
+     *  visible (e.g. pausing live cycles beneath it) must check this
+     *  rather than assume construction implies presence. */
+    val isShowing: Boolean get() = scrim != null
+    private var attachedActivity: Activity? = null
+    private var lifecycleCallback: Application.ActivityLifecycleCallbacks? = null
+    private var backPressedCallback: OnBackPressedCallback? = null
+    private var dismissed = false
+
+    private fun buildScrim(): FrameLayout {
+        val dp = context.resources.displayMetrics.density
+
+        // Full-screen scrim. Tapping it acts as a shortcut for the cancel
+        // button — invokes the same onCancel handler with USER reason.
+        // Order: dismiss first, then handler — matches the button path so
+        // any handler that chains another dialog sees the alert already
+        // gone, no overlap/flicker.
+        val scrimView = FrameLayout(context).apply {
+            setBackgroundColor(Color.argb(160, 0, 0, 0))
+            setOnClickListener { detachAndDispatch(DismissReason.USER) }
+            // The scrim spans the whole window, bars included (edge-to-edge
+            // activities, FLAG_LAYOUT_IN_SCREEN overlays), so the room the
+            // card may fill is the window minus the bars and any cutout:
+            // a card at full height would otherwise end under the
+            // navigation bar, buttons first.
+            ViewCompat.setOnApplyWindowInsetsListener(this) { v, insets ->
+                val bars = insets.getInsets(
+                    WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+                )
+                v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+                insets
+            }
+        }
+
+        // Dialog card: a scroll view wearing the card's chrome (surface,
+        // hairline, corners) around one column holding the icon, the
+        // title, the message and the buttons. A card that fits lays out at
+        // its natural size with nothing to scroll; one the window is too
+        // short for (a phone in landscape, a large font, a long message, a
+        // picker's column of buttons) scrolls as a whole, buttons included.
+        // Before this only the part above the buttons scrolled, in a
+        // weighted view inside the column, so a card tall from its buttons
+        // alone still ran off the bottom.
+        val stroke = (1 * dp).toInt()
+        val card = ScrollView(context).apply {
+            background = GradientDrawable().apply {
+                setColor(context.themeColor(R.attr.ptSurface))
+                setStroke(stroke, context.themeColor(R.attr.ptDivider))
+                cornerRadius = 16 * dp
+            }
+            // The column scrolls over the background, so it is clipped
+            // just inside the hairline (clipToPadding, the default) rather
+            // than painting a button across it at the top or bottom edge;
+            // the column's own side padding keeps it clear of the corners.
+            setPadding(0, stroke, 0, stroke)
+        }
+        val body = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((24 * dp).toInt(), (24 * dp).toInt(), (24 * dp).toInt(), (16 * dp).toInt())
+            gravity = Gravity.CENTER_HORIZONTAL
+            // Prevent clicks from passing through to scrim
+            setOnClickListener { }
+        }
+        card.addView(body, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+
+        // App icon in a circle ([appIconCircle]). Shown only when the caller
+        // opted in via Builder.showIcon() — off by default because the app's
+        // utility popups don't need the brand mark.
+        if (showAppIcon) {
+            val circleSize = (56 * dp).toInt()
+            body.addView(appIconCircle(context, circleSize).apply {
+                layoutParams = LinearLayout.LayoutParams(circleSize, circleSize).apply {
+                    gravity = Gravity.CENTER_HORIZONTAL
+                    bottomMargin = (16 * dp).toInt()
+                }
+            })
+        }
+
+        // Title
+        body.addView(TextView(context).apply {
+            text = title
+            setTextColor(context.themeColor(R.attr.ptText))
+            textSize = 17f
+            gravity = Gravity.CENTER
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.CENTER_HORIZONTAL
+                bottomMargin = (8 * dp).toInt()
+            }
+        })
+
+        // Message
+        if (message != null) {
+            body.addView(TextView(context).apply {
+                text = message
+                setTextColor(context.themeColor(R.attr.ptTextMuted))
+                textSize = 13f
+                gravity = Gravity.CENTER
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    gravity = Gravity.CENTER_HORIZONTAL
+                    bottomMargin = (20 * dp).toInt()
+                }
+            })
+        }
+
+        // Buttons
+        val hPad = (20 * dp).toInt()
+        val vPad = (10 * dp).toInt()
+        val btnLp = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        )
+
+        for ((idx, cfg) in buttons.withIndex()) {
+            val btn = Button(context).apply {
+                text = cfg.label
+                setTextColor(cfg.textColor)
+                textSize = 14f
+                isAllCaps = false
+                setPadding(hPad, vPad, hPad, vPad)
+                layoutParams = LinearLayout.LayoutParams(btnLp).apply {
+                    if (idx < buttons.size - 1) bottomMargin = (8 * dp).toInt()
+                }
+                if (cfg.color != Color.TRANSPARENT) {
+                    background = GradientDrawable().apply {
+                        setColor(cfg.color)
+                        cornerRadius = 8 * dp
+                    }
+                } else {
+                    setBackgroundColor(Color.TRANSPARENT)
+                }
+                cfg.leadingIconRes?.let { iconRes ->
+                    setCompoundDrawablesWithIntrinsicBounds(iconRes, 0, 0, 0)
+                    compoundDrawablePadding = (8 * dp).toInt()
+                    TextViewCompat.setCompoundDrawableTintList(this, ColorStateList.valueOf(cfg.textColor))
+                }
+                setOnClickListener {
+                    dismiss()
+                    cfg.onClick()
+                }
+            }
+            body.addView(btn)
+        }
+
+        val maxW = (280 * dp).toInt()
+        val dlp = FrameLayout.LayoutParams(maxW, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            gravity = Gravity.CENTER
+            topMargin = (16 * dp).toInt()
+            bottomMargin = (16 * dp).toInt()
+        }
+        scrimView.addView(card, dlp)
+
+        // Animate in
+        card.alpha = 0f
+        card.scaleX = 0.9f
+        card.scaleY = 0.9f
+        card.animate()
+            .alpha(1f)
+            .scaleX(1f)
+            .scaleY(1f)
+            .setDuration(150)
+            .setInterpolator(DecelerateInterpolator())
+            .start()
+
+        return scrimView
+    }
+
+    private fun showAsOverlay(overlayHost: OverlayHost, wm: WindowManager, displayId: Int) {
+        val scrimView = buildScrim()
+        // addOverlayWindow re-stamps params.type with the active backend's
+        // window type, so the type given here is just a placeholder.
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.TRANSLUCENT
+        )
+        if (!overlayHost.addOverlayWindow(scrimView, wm, params, displayId, OverlayPlacement.Content)) return
+        ViewCompat.requestApplyInsets(scrimView)
+        scrim = scrimView
+        dismissAction = { overlayHost.removeOverlayWindow(scrimView) }
+    }
+
+    /**
+     * Attach above whatever PlayTranslate surface is currently on top of
+     * [activity] — a showing DialogFragment's own window if one is up (the
+     * full-screen Settings sheet, its nested pickers, the Anki sheet…),
+     * otherwise the activity's decorView. Attaching to the activity decor
+     * while a dialog window sits above it z-orders the alert behind the dialog
+     * and leaves it invisible; resolving the top dialog here ([topmostDialogWindow])
+     * is what lets a single [Builder.show] cover both cases without callers
+     * choosing between [Builder.show] and [Builder.showInDialog].
+     */
+    private fun attachToForeground(activity: Activity) {
+        val topDialog = topmostDialogWindow(activity)
+        attachToDecor((topDialog?.window?.decorView ?: activity.window.decorView) as ViewGroup)
+        attachedActivity = activity
+
+        // Detach + cancel if the host activity leaves the foreground —
+        // sub-Activity navigation, app backgrounding, anything that fires
+        // onPause. A dialog pauses together with its host activity, so this
+        // covers the dialog-host case too. Without it the alert sits as an
+        // invisible child of a covered window. See OverlayAlert class doc.
+        val app = activity.application
+        val lifecycle = object : Application.ActivityLifecycleCallbacks {
+            override fun onActivityPaused(a: Activity) {
+                if (a === attachedActivity) detachAndDispatch(DismissReason.LIFECYCLE_PAUSE)
+            }
+            override fun onActivityCreated(a: Activity, b: Bundle?) {}
+            override fun onActivityStarted(a: Activity) {}
+            override fun onActivityResumed(a: Activity) {}
+            override fun onActivityStopped(a: Activity) {}
+            override fun onActivitySaveInstanceState(a: Activity, b: Bundle) {}
+            override fun onActivityDestroyed(a: Activity) {}
+        }
+        app.registerActivityLifecycleCallbacks(lifecycle)
+        lifecycleCallback = lifecycle
+
+        // If the host window is torn down independently of our own dismiss
+        // (e.g. the dialog we're parented to is dismissed) our scrim leaves
+        // the hierarchy without onActivityPaused firing. Treat that as a
+        // non-user dismissal so the lifecycle callback is unregistered and any
+        // control-flow caller branches on LIFECYCLE_PAUSE, not USER. Guarded
+        // by [dismissed] in detachAndDispatch so our own removeView — which
+        // also fires this — doesn't re-dispatch.
+        scrim?.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(v: View) {}
+            override fun onViewDetachedFromWindow(v: View) {
+                detachAndDispatch(DismissReason.LIFECYCLE_PAUSE)
+            }
+        })
+
+        // Back-press dismisses the alert, matching scrim-tap. When parented to
+        // a dialog window, back is dispatched to that window's dispatcher —
+        // register there so back closes the alert rather than the sheet
+        // beneath it. Activity-host alerts use the activity dispatcher.
+        val backDispatcher = (topDialog as? ComponentDialog)?.onBackPressedDispatcher
+            ?: (activity as? ComponentActivity)?.onBackPressedDispatcher
+        backDispatcher?.let { dispatcher ->
+            val backCb = object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() { detachAndDispatch(DismissReason.USER) }
+            }
+            dispatcher.addCallback(backCb)
+            backPressedCallback = backCb
+        }
+    }
+
+    /** Attaches to the decorView of [dialog]'s window; a no-op if the
+     *  dialog has already lost its window. */
+    private fun showInDialog(dialog: Dialog) {
+        val decor = dialog.window?.decorView as? ViewGroup ?: return
+        attachToDecor(decor)
+    }
+
+    /** Attaches as a child of [parent] (the workspace modal layer). A detach
+     *  of the scrim we didn't initiate — the parent's window tearing down —
+     *  dispatches LIFECYCLE_PAUSE, mirroring [attachToForeground]'s listener;
+     *  our own removeView is guarded by [dismissed] in [detachAndDispatch]. */
+    private fun showInParent(parent: ViewGroup) {
+        attachToDecor(parent)
+        scrim?.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(v: View) {}
+            override fun onViewDetachedFromWindow(v: View) {
+                detachAndDispatch(DismissReason.LIFECYCLE_PAUSE)
+            }
+        })
+    }
+
+    private fun attachToDecor(decor: ViewGroup) {
+        val scrimView = buildScrim()
+        val lp = FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        )
+        decor.addView(scrimView, lp)
+        ViewCompat.requestApplyInsets(scrimView)
+        scrim = scrimView
+        dismissAction = { try { decor.removeView(scrimView) } catch (_: Exception) {} }
+    }
+
+    private fun detachAndDispatch(reason: DismissReason) {
+        // Idempotent: scrim-tap / back / activity-pause / the
+        // detach-listener can all race to dismiss. First one wins; the rest
+        // (including the removeView that fires the detach listener) no-op so
+        // onCancel isn't invoked twice.
+        if (dismissed) return
+        dismiss()
+        onCancel?.invoke(reason)
+    }
+
+    fun dismiss() {
+        dismissed = true
+        dismissAction?.invoke()
+        dismissAction = null
+        scrim = null
+        lifecycleCallback?.let {
+            attachedActivity?.application?.unregisterActivityLifecycleCallbacks(it)
+        }
+        backPressedCallback?.remove()
+        lifecycleCallback = null
+        backPressedCallback = null
+        attachedActivity = null
+    }
+}

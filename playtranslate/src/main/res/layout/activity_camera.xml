@@ -1,0 +1,213 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Camera tool: full-bleed preview with floating controls on top. The
+     preview intentionally extends behind the system bars; only
+     @id/cameraControls receives inset padding (see CameraActivity). -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/black">
+
+    <androidx.camera.view.PreviewView
+        android:id="@+id/cameraPreview"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- Frozen snapshot frame: the upright analysis keyframe shown over the
+         live preview while a snapshot is being read. centerCrop == the
+         preview's FILL_CENTER == CameraCoordinates' mapping, so identity-
+         warped overlays land exactly on the frozen text. Clickable so
+         tap-to-focus on the (still running) preview underneath is swallowed
+         while frozen. -->
+    <ImageView
+        android:id="@+id/cameraFreezeFrame"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clickable="true"
+        android:focusable="false"
+        android:importantForAccessibility="no"
+        android:scaleType="centerCrop"
+        android:visibility="gone" />
+
+    <!-- Overlay layer host: Phase 1 adds the translation/reading overlays here,
+         between the preview and the floating controls. -->
+    <FrameLayout
+        android:id="@+id/cameraOverlayHost"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- Snapshot result panel host: the capture bottom sheet attaches here
+         (ActivitySheetHost). Sits BELOW cameraControls in z so the frozen-
+         state X stays tappable above the sheet. -->
+    <FrameLayout
+        android:id="@+id/cameraPanelHost"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- Floating controls — the ONLY view that gets system-bar inset padding.
+         match_parent so bottom-gravity children (shutter, hint) sit at the
+         true screen bottom; the FrameLayout itself is non-clickable, so
+         touches outside its children fall through to the panel/preview. -->
+    <FrameLayout
+        android:id="@+id/cameraControls"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <ImageButton
+            android:id="@+id/cameraBack"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_gravity="start|top"
+            android:layout_margin="8dp"
+            android:background="@drawable/bg_camera_control_scrim"
+            android:contentDescription="@string/camera_back_cd"
+            android:src="@drawable/ic_arrow_back"
+            app:tint="@android:color/white" />
+
+        <!-- Top-right control pill: [play/pause | crop] [settings]. Play/pause
+             and crop swap with the mode; the gear expands the language / OCR /
+             overlays menu below the row (CameraGearMenu). -->
+        <!-- Height matches the 44dp back button so the two top corners align.
+             VERTICAL: the 44dp icon row on top, and the gear's expandable
+             menu (language + OCR rows) below it — CameraGearMenu animates
+             this container's size; end-gravity keeps the right edge pinned
+             so it grows leftward and downward. -->
+        <LinearLayout
+            android:id="@+id/cameraControlPill"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="end|top"
+            android:layout_margin="8dp"
+            android:background="@drawable/bg_camera_control_pill"
+            android:orientation="vertical">
+
+        <LinearLayout
+            android:id="@+id/cameraPillIconRow"
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:layout_gravity="end"
+            android:animateLayoutChanges="true"
+            android:divider="@drawable/divider_camera_pill_gap"
+            android:orientation="horizontal"
+            android:paddingHorizontal="4dp"
+            android:showDividers="middle">
+
+            <!-- Play/pause over auto-detection. Shows ic_pause while running
+                 (tap to pause), ic_play while paused (tap to resume). -->
+            <ImageButton
+                android:id="@+id/cameraPlayPause"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="@null"
+                android:contentDescription="@string/camera_pause_cd"
+                android:src="@drawable/ic_pause"
+                app:tint="@android:color/white" />
+
+            <!-- Snapshot region select (FROZEN only — it takes over the slot
+                 play/pause vacates): crop the reading to a drawn region. -->
+            <ImageButton
+                android:id="@+id/cameraRegionSelect"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="@null"
+                android:contentDescription="@string/camera_region_cd"
+                android:src="@drawable/ic_crop"
+                android:visibility="gone"
+                app:tint="@android:color/white" />
+
+            <ImageButton
+                android:id="@+id/cameraSettings"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="@null"
+                android:contentDescription="@string/camera_settings_cd"
+                android:src="@drawable/ic_settings"
+                app:tint="@android:color/white" />
+
+        </LinearLayout>
+
+        <!-- Gear menu rows (language / OCR), populated + revealed by
+             CameraGearMenu. -->
+        <LinearLayout
+            android:id="@+id/cameraPillMenu"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone" />
+
+        </LinearLayout>
+
+        <!-- Snapshot shutter: freezes the current frame and reads it once. -->
+        <ImageButton
+            android:id="@+id/cameraShutter"
+            android:layout_width="72dp"
+            android:layout_height="72dp"
+            android:layout_gravity="center_horizontal|bottom"
+            android:layout_marginBottom="28dp"
+            android:background="@null"
+            android:contentDescription="@string/camera_shutter_cd"
+            android:src="@drawable/bg_camera_shutter" />
+
+        <!-- User-facing status hint (e.g. "no readable text"): shown when a
+             scan finds nothing usable, instead of silently showing nothing. -->
+        <TextView
+            android:id="@+id/cameraHint"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal|bottom"
+            android:layout_marginBottom="116dp"
+            android:background="@drawable/bg_camera_pill_scrim"
+            android:paddingHorizontal="14dp"
+            android:paddingVertical="6dp"
+            android:textColor="@android:color/white"
+            android:textSize="13sp"
+            android:visibility="gone" />
+
+        <!-- Tracker debug pill (debug builds only): STATE inl=… sc=… ms. -->
+        <TextView
+            android:id="@+id/cameraDebugPill"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="start|top"
+            android:layout_marginStart="8dp"
+            android:layout_marginTop="60dp"
+            android:background="@drawable/bg_camera_pill_scrim"
+            android:fontFamily="monospace"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="4dp"
+            android:textColor="@android:color/white"
+            android:textSize="11sp"
+            android:visibility="gone" />
+
+    </FrameLayout>
+
+    <!-- Permission gate: replaces the preview until CAMERA is granted. -->
+    <LinearLayout
+        android:id="@+id/cameraPermissionGate"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@android:color/black"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:padding="32dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/cameraPermissionText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:text="@string/camera_permission_rationale"
+            android:textColor="@android:color/white"
+            android:textSize="15sp" />
+
+        <Button
+            android:id="@+id/cameraPermissionButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="@string/camera_permission_grant" />
+
+    </LinearLayout>
+
+</FrameLayout>

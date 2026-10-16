@@ -1,0 +1,143 @@
+package com.playtranslate.ui
+
+import android.app.Application
+import android.content.Context
+import android.os.Looper
+import androidx.test.core.app.ApplicationProvider
+import com.playtranslate.Prefs
+import com.playtranslate.language.HintTextKind
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
+import org.robolectric.annotation.Config
+
+/**
+ * [HotkeysSettingsViewModel] projects the hotkey + QS-tile state from [Prefs]
+ * and writes back through it. These tests pin the projection seed + the
+ * setters' write-through (the source-of-truth contract); the interactive a11y
+ * gate, key-capture dialog, and StatusBarManager request live in the Activity
+ * and are exercised on-device.
+ */
+@RunWith(RobolectricTestRunner::class)
+class HotkeysSettingsViewModelTest {
+
+    private val app: Application = ApplicationProvider.getApplicationContext()
+    private val ctx: Context = app
+
+    @Before fun clearPrefs() {
+        ctx.getSharedPreferences("playtranslate_prefs", Context.MODE_PRIVATE)
+            .edit().clear().commit()
+    }
+
+    @After fun tearDown() {
+        ctx.getSharedPreferences("playtranslate_prefs", Context.MODE_PRIVATE)
+            .edit().clear().commit()
+    }
+
+    @Test fun `initial state reflects current prefs`() {
+        Prefs(ctx).apply { hotkeyTranslation = "3+4"; hotkeyTranslationTap = "5+6" }
+        val vm = HotkeysSettingsViewModel(app)
+        assertEquals("3+4", vm.state.value.translationHotkey)
+        assertEquals("5+6", vm.state.value.translationTapHotkey)
+    }
+
+    @Test fun `setTranslationHotkey writes through to prefs`() {
+        val vm = HotkeysSettingsViewModel(app)
+        vm.setTranslationHotkey("113+29")
+        assertEquals("113+29", Prefs(ctx).hotkeyTranslation)
+    }
+
+    @Test fun `clearTranslationHotkey writes through to prefs`() {
+        Prefs(ctx).hotkeyTranslation = "1+2"
+        val vm = HotkeysSettingsViewModel(app)
+        vm.clearTranslationHotkey()
+        assertEquals("", Prefs(ctx).hotkeyTranslation)
+    }
+
+    @Test fun `setFuriganaHotkey writes through to prefs`() {
+        val vm = HotkeysSettingsViewModel(app)
+        vm.setFuriganaHotkey("57")
+        assertEquals("57", Prefs(ctx).hotkeyFurigana)
+    }
+
+    @Test fun `tap-hotkey setters write through to prefs`() {
+        val vm = HotkeysSettingsViewModel(app)
+        vm.setTranslationTapHotkey("96")
+        vm.setFuriganaTapHotkey("99+100")
+        assertEquals("96", Prefs(ctx).hotkeyTranslationTap)
+        assertEquals("99+100", Prefs(ctx).hotkeyFuriganaTap)
+    }
+
+    @Test fun `tap-hotkey clearers write through to prefs`() {
+        Prefs(ctx).apply { hotkeyTranslationTap = "1"; hotkeyFuriganaTap = "2" }
+        val vm = HotkeysSettingsViewModel(app)
+        vm.clearTranslationTapHotkey()
+        vm.clearFuriganaTapHotkey()
+        assertEquals("", Prefs(ctx).hotkeyTranslationTap)
+        assertEquals("", Prefs(ctx).hotkeyFuriganaTap)
+    }
+
+    @Test fun `the game-language hotkey seeds from prefs and writes through`() {
+        Prefs(ctx).hotkeyChangeGameLanguageTap = "100"
+        val vm = HotkeysSettingsViewModel(app)
+        assertEquals("100", vm.state.value.changeGameLanguageTapHotkey)
+
+        vm.setChangeGameLanguageTapHotkey("113+100")
+        assertEquals("113+100", Prefs(ctx).hotkeyChangeGameLanguageTap)
+        vm.clearChangeGameLanguageTapHotkey()
+        assertEquals("", Prefs(ctx).hotkeyChangeGameLanguageTap)
+    }
+
+    @Test fun `markQuickTileAdded persists`() {
+        val vm = HotkeysSettingsViewModel(app)
+        vm.markQuickTileAdded()
+        // Write-through to prefs (the source of truth); the cell's reactive
+        // re-hide via addTileVisible is covered on-device.
+        assertTrue(Prefs(ctx).quickTileAdded)
+    }
+
+    @Test @Config(sdk = [34])
+    fun `add-tile cell stays visible but marked added once the tile is added`() {
+        Prefs(ctx).quickTileAdded = true
+        val vm = HotkeysSettingsViewModel(app)
+        // On API 33+ the cell stays — it flips from the "add" CTA to a checked
+        // "added" state rather than disappearing.
+        assertTrue(vm.state.value.addTileVisible)
+        assertTrue(vm.state.value.tileAdded)
+    }
+
+    @Test @Config(sdk = [31])
+    fun `add-tile cell is absent below api 33`() {
+        val vm = HotkeysSettingsViewModel(app)
+        assertFalse(vm.state.value.addTileVisible)
+    }
+
+    @Test fun `furigana section is shown for the default Japanese source`() {
+        // Default source language (cleared prefs) is Japanese, which has a
+        // furigana hint layer — so the reading-hint section is offered.
+        val vm = HotkeysSettingsViewModel(app)
+        assertTrue(vm.state.value.showFuriganaSection)
+    }
+
+    @Test fun `the reading-hint section follows a game-language change made while the page is open`() {
+        // The floating icon's "Change game language", its hotkey and the quick
+        // menu's Language row all reach the language with this page open.
+        val vm = HotkeysSettingsViewModel(app)
+        assertTrue("Japanese has furigana", vm.state.value.showFuriganaSection)
+
+        Prefs(ctx).sourceLang = "en"
+        shadowOf(Looper.getMainLooper()).idle()
+        assertFalse("English has no reading hint", vm.state.value.showFuriganaSection)
+
+        Prefs(ctx).sourceLang = "zh"
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(vm.state.value.showFuriganaSection)
+        assertEquals(HintTextKind.PINYIN, vm.state.value.hintKind)
+    }
+}

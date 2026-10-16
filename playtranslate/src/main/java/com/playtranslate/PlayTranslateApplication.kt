@@ -1,0 +1,423 @@
+package com.playtranslate
+
+import android.app.Activity
+import android.app.Application
+import android.content.ComponentCallbacks2
+import android.os.Build
+import android.os.Bundle
+import com.playtranslate.capture.CaptureBackendResolver
+import com.playtranslate.diagnostics.CrashHandler
+import android.content.Context
+import android.util.Log
+import com.playtranslate.region.RegionPolicy
+import com.playtranslate.translation.GemmaE2BMnnBackend
+import com.playtranslate.translation.HyMt2Backend
+import com.playtranslate.translation.HyMtBackend
+import com.playtranslate.translation.BergamotBackend
+import com.playtranslate.translation.MlKitBackend
+import com.playtranslate.translation.OnlineBackendFactory
+import com.playtranslate.translation.OnlineServiceStore
+import com.playtranslate.translation.QwenMnnBackend
+import com.playtranslate.translation.Qwen35Mnn2bBackend
+import com.playtranslate.translation.TranslationBackendRegistry
+import com.playtranslate.translation.mnn.MnnTranslator
+import com.playtranslate.overlay.OwnWindows
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import java.lang.ref.WeakReference
+
+/**
+ * PlayTranslate's process-level wiring. In the standalone app this was the manifest `Application`; inside
+ * Noctis the host `App` owns that slot, so the same work lives here and is driven by two hooks:
+ *
+ *  - [init] from `App.onCreate` (idempotent, never throws into the host)
+ *  - [onTrimMemory] from `App.onTrimMemory`
+ *
+ * Call sites that used `PlayTranslateApplication.foregroundDisplayId()` etc. are unchanged.
+ */
+object PlayTranslateApplication {
+
+    /** Application-scoped coroutine scope for fire-and-forget background work
+     *  that must outlive any individual UI lifecycle (onTrimMemory unloads,
+     *  post-save key validation that should still fire its Toast after the
+     *  settings sub-screen finishes, etc.). IO dispatcher because LLM unload
+     *  has to wait on the engine's llamaDispatcher and shouldn't tie up the
+     *  main thread; consumers that need Main (UI Toasts) pass it explicitly
+     *  to [launch]. */
+    val appScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    @Volatile private var initialized = false
+
+    /** Safe to call more than once; a failure here must never take the host app down. */
+    fun init(app: Application) {
+        if (initialized) return
+        synchronized(this) {
+            if (initialized) return
+            initialized = true
+        }
+        runCatching { onCreate(app) }
+            .onFailure { Log.e(TAG, "PlayTranslate init failed", it) }
+    }
+
+    private fun onCreate(app: Application) {
+        // The kept window contexts belong to the Application that made them.
+        // A no-op in production (nothing reads a display before this); under
+        // Robolectric a fork's later tests would read through an earlier
+        // test's torn-down environment.
+        DisplayWindowContexts.reset()
+        // Noctis installs its own GlobalExceptionHandler; PlayTranslate's CrashHandler (which chains to the previous
+        // handler) is installed too so its crash log export keeps working.
+        CrashHandler.install(app)
+        // Translation-waterfall forensics (failure ring + connectivity
+        // summary for the log-export header). Before the registry init so
+        // the first waterfall pass can already record.
+        com.playtranslate.diagnostics.TranslationDiag.init(app)
+        // Process-death forensics for the same header: the platform's
+        // record of why earlier processes died, read at export time.
+        com.playtranslate.diagnostics.ProcessExitDiag.init(app)
+        // Was the previous process killed with the floating controls on?
+        // Decided once, here, before any writer can overwrite the record.
+        com.playtranslate.capture.SessionMarker.evaluate(app)
+        // Collect Anki screenshot pins orphaned by a crash/process death
+        // (their send's finally never ran). Also swept opportunistically on
+        // every pin; this catches the "never sends again" tail. Off-main:
+        // cold start shouldn't pay for cache hygiene.
+        Thread { com.playtranslate.ui.AnkiScreenshotPin.sweepStale(app) }.start()
+        // History capture images orphaned by FIFO prune / row deletes /
+        // process death mid-copy — reconciled against surviving rows.
+        com.playtranslate.translationlog.HistoryImageStore.sweepAsync(app)
+        // Hidden words for the current source language: load off-main now so
+        // the first results list and sentence card draw their stubs on the
+        // first pass. Structural fallback for every other language (and a
+        // load that lands late): the hosts collect HiddenWordsStore.revision.
+        com.playtranslate.vocab.HiddenWordsStore.warm(app, Prefs(app).sourceLangId)
+        // Push the persisted grouping-debug flag into the process-wide
+        // OcrManager singleton before any OCR can run. The SettingsRenderer
+        // toggle also writes this on change, so the in-memory copy stays in
+        // sync with [Prefs.debugLogGrouping] without OcrManager holding a
+        // Context of its own. Gated on BuildConfig.DEBUG so a stale `true`
+        // value carried over from a debug build can't leak OCR text to
+        // logcat in a release upgrade — release builds also hide the Debug
+        // section, so there'd be no way to turn it back off.
+        // Production OCR needs an app Context to resolve installed packs (the
+        // registry + bridges are Context-free); push it before any capture runs.
+        // Selection lives in Prefs; OcrModelManager resolves the chosen engine
+        // per recognise() and the bridges own the native sessions.
+        com.playtranslate.ocr.registry.OcrModelManager.appContext = app.applicationContext
+        if (BuildConfig.DEBUG) {
+            OcrManager.instance.debugLogGroupingEnabled = Prefs(app).debugLogGrouping
+            // The AngleProbe rides the same toggle — one switch turns on all
+            // angle instrumentation (probe + ang= layout lines).
+            OcrManager.instance.debugAngleProbeEnabled = Prefs(app).debugLogGrouping
+            // Slant-gate rollback override survives restarts like the
+            // toggles above (ON = the pre-drop 10° gate).
+            if (Prefs(app).debugAngleGateAtTarget) {
+                OcrManager.instance.debugAngleGateDeg =
+                    com.playtranslate.ocr.core.OcrBox.ANGLE_LEGACY_GATE_DEG
+            }
+        }
+        // Furigana filter: a user setting, mirrored into the OCR gate like the
+        // debug toggles above (ocr.core can't read Prefs itself).
+        OcrManager.instance.filterFuriganaEnabled = Prefs(app).filterFurigana
+        // Push the "Use MangaOCR" toggle + installed-pack state into the OCR gate
+        // (same Context-free reason as above — the refiner can't resolve the pack itself).
+        com.playtranslate.ocr.mangaocr.MangaOcrProvisioning.refresh(app.applicationContext)
+        // Derive the capture backend from the granted permissions (the
+        // accessibility service vs "display over other apps").
+        CaptureBackendResolver.reresolve(app)
+        // Build the translation-backend registry once at process start.
+        // Backends are stateless or hold pooled HTTP clients that should
+        // outlive a single CaptureService instance. Config is read via
+        // closure each call so a Settings change propagates without
+        // rebuilding the registry.
+        //
+        // Online backends are store-driven: OnlineServiceStore.init runs
+        // the one-shot legacy→instance migration and loads the ordered
+        // instance list, which the factory maps to backends. The trailing
+        // setOrder makes the waterfall honor the store's list order for
+        // the online segment (offline tiers follow by priority). The
+        // settings UI keeps membership + order in sync as instances are
+        // added / removed / reordered.
+        // Composition-root install of the user-edited prompt overrides
+        // (Advanced LLM Configuration). The template objects are stateless
+        // and Context-free, so this closure is their one seam to Prefs —
+        // re-read per translate call, so an edit propagates without any
+        // registry rebuild.
+        com.playtranslate.translation.llm.LlmPromptTemplates.overrideProvider =
+            { kind -> kind.read(Prefs(app)) }
+        // {context} resolves against the live recording backend. Never
+        // force-inits the recorder (no context can exist before a first
+        // commit anyway); called from backend threads — contextBlockFor is
+        // thread-safe and returns "" whenever the feature is off.
+        com.playtranslate.translation.llm.LlmPromptTemplates.contextProvider = { source, target ->
+            CaptureService.instance?.translationLogRecorderIfInitialized
+                ?.contextBlockFor(source, target) ?: ""
+        }
+        val sharedPrefs = app.getSharedPreferences("playtranslate_prefs", Context.MODE_PRIVATE)
+        OnlineServiceStore.init(app)
+        val onlineBackends = OnlineServiceStore.all().map {
+            OnlineBackendFactory.build(app, sharedPrefs, it)
+        }
+        TranslationBackendRegistry.init(
+            onlineBackends + listOf(
+                GemmaE2BMnnBackend(
+                    context         = app,
+                    enabledProvider = { Prefs(app).gemmaE2bEnabled },
+                ),
+                HyMtBackend(
+                    context         = app,
+                    // AND-gate the region check at runtime, not just in the
+                    // Settings UI: a restored backup, a region change after
+                    // install, or any path that leaves hyMtEnabled=true in a
+                    // restricted region would otherwise let the waterfall
+                    // run Hunyuan against the HY Community License.
+                    enabledProvider = {
+                        Prefs(app).hyMtEnabled &&
+                            !RegionPolicy.isHunyuanRestricted(app)
+                    },
+                ),
+                HyMt2Backend(
+                    // No region AND-gate here, unlike the 1.5 backend above:
+                    // Hy-MT2 is Apache-2.0 with no Territory restriction, so
+                    // the only gate is the user's own toggle.
+                    context         = app,
+                    enabledProvider = { Prefs(app).hyMt2Enabled },
+                ),
+                QwenMnnBackend(
+                    context         = app,
+                    enabledProvider = { Prefs(app).qwenMnnEnabled },
+                ),
+                Qwen35Mnn2bBackend(
+                    context         = app,
+                    enabledProvider = { Prefs(app).qwen35Mnn2bEnabled },
+                ),
+                BergamotBackend(
+                    context         = app,
+                    enabledProvider = { Prefs(app).bergamotEnabled },
+                ),
+                MlKitBackend(),
+            )
+        )
+        TranslationBackendRegistry.setOrder(OnlineServiceStore.all().map { it.id })
+        // A regained network (airplane mode off, wifi back) drops every
+        // "Connection failed" cooldown: those were recorded against the
+        // device being offline, not against the provider, and the user
+        // expects online services to work the moment connectivity is back.
+        // After the registry init on purpose — registration replays the
+        // current network at once, and the replay must find the backends.
+        com.playtranslate.net.NetworkConnectivity.install(app) {
+            TranslationBackendRegistry.onConnectivityRestored()
+        }
+        // Online translation failures surface as a pill on the game display
+        // (the registry reports every pass; the tracker decides; the active
+        // capture backend's overlay controller draws).
+        com.playtranslate.translation.TranslationErrors.install(
+            app, com.playtranslate.ui.ActiveOverlayErrorPills,
+        )
+
+        // Launch-time cleanup: drop in-flight download partials for any
+        // deprecated model (generic — driven by CatalogEntry.deprecated), so a
+        // retired model can't resume a stale partial download. No-op for live
+        // models and for fully-installed deprecated models (their install is
+        // kept; only the .partial / .tmp staging artifacts are removed).
+        //
+        // The unlinks run on [appScope] (IO), not here: a directory-mode model
+        // stages its verified parts in `<model>.tmp`, so an interrupted
+        // MultiFile download can leave up to a model's worth of bytes to free
+        // (Hunyuan-MT 1.5 is ~1 GB across five files), and how long that takes
+        // is entirely a property of the device's storage. Nothing downstream
+        // orders against it — a deprecated model's row is hidden unless it is
+        // fully installed, so the stale partial this deletes cannot be resumed
+        // by the user in the meantime. Backends are resolved on the main
+        // thread, where the registry was just initialized; only the deletes
+        // are deferred.
+        val deprecatedCleanup = TranslationBackendRegistry.orderedBackends()
+            .filterIsInstance<com.playtranslate.translation.llm.OnDeviceLlmBackend>()
+        appScope.launch {
+            deprecatedCleanup.forEach {
+                runCatching { it.cleanupPartialsIfDeprecated() }
+                    .onFailure { e -> Log.w(TAG, "deprecated partial cleanup failed: $e") }
+            }
+        }
+        // Same launch-time-cleanup rationale for game-audio snapshots: the
+        // in-session sweep runs only when a NEW snapshot is taken, so a
+        // ~16 MB zombie from a killed-and-never-restored card flow would
+        // otherwise linger until the OS purges the cache. A couple of stats
+        // + unlinks; negligible on cold start.
+        com.playtranslate.capture.GameAudioSnapshot.sweepOrphans(app)
+        // Track the currently-resumed PlayTranslate activity so display-id
+        // queries always reflect the live state instead of a value cached
+        // at lifecycle boundaries — Android can move an activity between
+        // displays without firing onPause/onResume when configChanges
+        // swallows the screenLayout swap, leaving any cached id stale.
+        // The registry starts empty: no activity of this process resumed
+        // before its Application was created. Said explicitly because the
+        // registry is static and outlives this instance: under Robolectric
+        // every test creates a new Application in a JVM whose statics
+        // persist, and an activity a previous test resumed and never paused
+        // stayed registered, held by that test's controller until the
+        // collector ran, so a later test's foregroundDisplayId reached into
+        // a torn-down environment and threw (ErrorPillSettingsGearTest, 11
+        // of 17, 2026-10-11; whether it showed depended on which fork ran
+        // the suite and what had run there before). The ops queued for the
+        // next resume are static for the same reason and start empty too.
+        resumedActivity = null
+        pendingForegroundOps.clear()
+        app.registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            override fun onActivityResumed(activity: Activity) {
+                resumedActivity = WeakReference(activity)
+                CaptureService.instance?.reconcileLiveModes("activityResumed=${activity.javaClass.simpleName}")
+                CaptureService.instance?.reconcileGameAudio()
+                drainPendingForegroundOps(activity)
+            }
+            override fun onActivityPaused(activity: Activity) {
+                if (resumedActivity?.get() === activity) {
+                    resumedActivity = null
+                    CaptureService.instance?.reconcileLiveModes("activityPaused=${activity.javaClass.simpleName}")
+                    CaptureService.instance?.reconcileGameAudio()
+                }
+            }
+            override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
+            override fun onActivityStarted(activity: Activity) {}
+            override fun onActivityStopped(activity: Activity) {}
+            override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
+            override fun onActivityDestroyed(activity: Activity) {}
+        })
+        // Right-stick scrolling on every in-app page — one Window.Callback
+        // wrap per activity, so no page implements it.
+        com.playtranslate.ui.ActivityStickScroll.install(app)
+        // Keep our own activity windows out of captured frames (the
+        // FLAG_SECURE replacement) — tracks started opaque activities so the
+        // capture sources can mask them at serve time.
+        com.playtranslate.capture.OwnWindowMask.install(app)
+        // Timestamp every window event of ours (activity transitions here;
+        // overlay adds, removes and blanks at their funnels) so the
+        // MediaProjection session creates its VirtualDisplay only in a
+        // window-quiet moment — the Thor display-service deadlock guard.
+        com.playtranslate.overlay.OwnWindowClock.install(app)
+    }
+
+        private const val TAG = "PlayTranslateApp"
+
+        /** Single-slot tracker for the currently-resumed PlayTranslate
+         *  activity. Treats "PlayTranslate is on display X" as a 1-element
+         *  set, which is correct for our usage: MainActivity launches
+         *  TranslationResultActivity / WordAnkiReviewActivity / etc. with
+         *  FLAG_ACTIVITY_NEW_TASK — they replace the foreground rather
+         *  than running alongside, so at most one of our activities is in
+         *  RESUMED state at a time. Multi-resume (Android 10+ split-screen
+         *  with two of OUR activities resumed on different displays) is
+         *  not enabled by our manifest and not exercised by any code path
+         *  here. If that ever changes, switch to a Set<Activity> keyed by
+         *  identity and have foregroundDisplayId return Set<Int>. */
+        @Volatile
+        private var resumedActivity: WeakReference<Activity>? = null
+
+        /** Display id whichever PlayTranslate activity is currently resumed
+         *  is showing on, or null if none is. Live-read via
+         *  [Activity.getDisplay] — no cached value, so an in-place display
+         *  swap (no onPause/onResume) is reflected immediately. */
+        fun foregroundDisplayId(): Int? {
+            val act = resumedActivity?.get() ?: return null
+            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) act.display?.displayId
+            else @Suppress("DEPRECATION") OwnWindows.managerOf(act).defaultDisplay.displayId
+        }
+
+        /** Simple class name of the currently-resumed PlayTranslate activity,
+         *  or null when none is. The game-audio recorder matches this against
+         *  its card-flow pause set. */
+        fun resumedActivitySimpleName(): String? =
+            resumedActivity?.get()?.javaClass?.simpleName
+
+        /** Pre-populate the resumed-activity registry from inside an
+         *  activity's own onResume, *before* anything in that resume path
+         *  triggers a reconcile that reads [foregroundDisplayId]. The
+         *  framework's [ActivityLifecycleCallbacks.onActivityResumed]
+         *  doesn't fire until after [Activity.onResume] returns, so
+         *  [MainActivity.isInForeground]'s setter (which fires
+         *  reconcileLiveModes from inside onResume) would otherwise see a
+         *  null display id and let live mode capture the app's own
+         *  display for one cycle. The Application-level callback still
+         *  runs idempotently afterwards. */
+        fun markResumed(activity: Activity) {
+            resumedActivity = WeakReference(activity)
+        }
+
+        /** Ops queued by [runWithForegroundActivity] when no PlayTranslate
+         *  activity is currently resumed. Drained on the next
+         *  [ActivityLifecycleCallbacks.onActivityResumed]. Main-thread-only;
+         *  no synchronization. */
+        private val pendingForegroundOps = mutableListOf<(Activity) -> Unit>()
+
+        /** Runs [block] with the currently-resumed PlayTranslate activity,
+         *  or defers it until one resumes. Used by [OverlayAlert] /
+         *  [OverlayProgress] so an alert shown before MainActivity has
+         *  reached RESUMED (e.g. fired from onCreate) still attaches once
+         *  the activity is visible — instead of being lost.
+         *
+         *  Main-thread-only. Multiple deferred ops fire in registration
+         *  order on the same resume.
+         */
+        fun runWithForegroundActivity(block: (Activity) -> Unit) {
+            val activity = resumedActivity?.get()
+            if (activity != null) block(activity)
+            else pendingForegroundOps.add(block)
+        }
+
+        private fun drainPendingForegroundOps(activity: Activity) {
+            if (pendingForegroundOps.isEmpty()) return
+            val drained = pendingForegroundOps.toList()
+            pendingForegroundOps.clear()
+            drained.forEach { it(activity) }
+        }
+
+    /**
+     * Drop cached ML Kit OCR recognizers when the system signals the process
+     * is at the top of the background LRU kill list. A foreground service
+     * keeps the process out of that bucket, so this only fires when our
+     * CaptureService has stopped — guaranteeing no recognise() call is in
+     * flight to race with the close. See [OcrManager.releaseAll] for why
+     * uninstall paths can't free recognizers directly.
+     *
+     * Skipped in debug builds because the "Show OCR boxes" debug overlay
+     * (gated to BuildConfig.DEBUG in SettingsRenderer) drives an OCR loop
+     * out of the accessibility service, which has no foreground-service
+     * weight class. With that loop running, the process can hit
+     * TRIM_MEMORY_COMPLETE while OcrManager.recognise() is mid-call. The
+     * cache is bounded at one recognizer per backend (~5 entries); the
+     * dev-only "leak" isn't worth the complexity of refcounting.
+     */
+    // Suppress TRIM_MEMORY_COMPLETE's API-35 deprecation: Android 15+ stopped
+    // delivering most TRIM_MEMORY_* levels (the OS reclaims memory itself
+    // instead of asking apps). There's no replacement signal for "you're at
+    // the top of the kill list" on newer OS versions, but the cleanup remains
+    // useful on Android 11–13 (the device class the project's retro-handheld
+    // userbase actually runs). Graceful degradation when the signal doesn't
+    // fire — onTrimMemory just isn't called, no caller depends on it.
+    @Suppress("DEPRECATION")
+    fun onTrimMemory(app: Application, level: Int) {
+        if (!initialized) return
+        if (BuildConfig.DEBUG) return
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_COMPLETE) {
+            OcrManager.instance.releaseAll()
+            // OCR pack *disk* reclaim is intentionally NOT done here: freeing disk
+            // doesn't relieve RAM pressure, and an unguarded sweep at TRIM can race
+            // a backgrounded in-flight pack download (deleting a just-installed
+            // pack). Orphaned OCR packs are swept at the next launch instead
+            // (MainActivity, post-settle quiescence) — see OcrModelManager.sweepOrphans.
+            // Drop the on-device LLM model + KV cache / scratch (E2B's working
+            // set is ~3.3 GB on Thor; Qwen-MNN's is ~1 GB). At
+            // TRIM_MEMORY_COMPLETE we're at the top of the LRU kill list;
+            // freeing now might defer the kill, and if it doesn't we lose
+            // nothing. Mutex-serialized inside [MnnTranslator.unloadModel]
+            // so it can't race an in-flight translate(). Async because the
+            // engine's cleanUp() does runBlocking on its own dispatcher and
+            // we don't want to ANR the main thread that delivered onTrimMemory.
+            appScope.launch {
+                MnnTranslator.getInstance(app).unloadModel()
+            }
+        }
+    }
+}

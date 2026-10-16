@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:gravity="center_horizontal"
+    android:padding="24dp"
+    android:background="@drawable/bg_hotkey_dialog">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/dialog_hotkey_setup_title"
+        android:textColor="@color/pt_dark_text"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:gravity="center" />
+
+    <TextView
+        android:id="@+id/tvTitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textColor="@color/pt_dark_text"
+        android:textSize="17sp"
+        android:textStyle="bold"
+        android:gravity="center" />
+
+    <TextView
+        android:id="@+id/tvInstruction"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/dialog_hotkey_setup_instruction"
+        android:textColor="@color/pt_accent_teal"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:gravity="center"
+        android:minLines="2"
+        android:layout_marginTop="16dp" />
+
+    <TextView
+        android:id="@+id/tvTimer"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:visibility="gone"
+        android:textColor="@color/pt_dark_danger"
+        android:textSize="23sp"
+        android:layout_marginTop="8dp" />
+
+    <TextView
+        android:id="@+id/btnCancel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/btn_cancel"
+        android:textColor="?attr/ptText"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:layout_marginTop="24dp"
+        android:minHeight="48dp"
+        android:paddingHorizontal="20dp"
+        android:paddingVertical="10dp"
+        android:gravity="center"
+        android:background="@drawable/bg_hotkey_cancel_btn"
+        android:clickable="true"
+        android:focusable="true" />
+
+</LinearLayout>

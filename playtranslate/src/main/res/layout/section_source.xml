@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Source (original) section: header + card. Shared by the in-app results page
+     (fragment_translation_result.xml) and the over-game capture panel
+     (CaptureResultOverlay). merge-rooted so it inlines into a vertical
+     LinearLayout parent without adding a wrapper; every id is preserved so the
+     fragment's findViewById keeps working unchanged. -->
+<merge xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:parentTag="android.widget.LinearLayout">
+
+    <!-- The header: the language name, then the section's actions, which
+         SectionHeaderRow builds from TranslationSectionBinder's HeaderActions
+         and folds behind a ⋯ menu when they don't fit (the eye never folds).
+         It must stay this merge's FIRST child: the capture panel re-pads it
+         through getChildAt(0). -->
+    <com.playtranslate.ui.SectionHeaderRow
+        android:id="@+id/sourceHeaderRow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingTop="@dimen/pt_group_gap"
+        android:paddingBottom="8dp"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp">
+
+        <!-- Tappable area hugs the label text (wrap_content) but fills the row's full
+             height (match_parent) so it matches the inline action buttons. One line:
+             the row cuts it with an ellipsis only when the name alone leaves no room
+             for ⋯ and the eye, so the header's height never changes. -->
+        <TextView
+            android:id="@+id/labelOriginal"
+            style="@style/Text.PT.GroupHeader"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:background="?attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true"
+            android:contentDescription="@string/cd_change_source_language"
+            android:text="@string/section_original" />
+
+    </com.playtranslate.ui.SectionHeaderRow>
+
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/cardOriginal"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        app:cardBackgroundColor="?attr/ptCard"
+        app:cardCornerRadius="@dimen/pt_radius"
+        app:cardElevation="0dp"
+        app:strokeColor="?attr/ptDivider"
+        app:strokeWidth="1dp">
+
+        <LinearLayout
+            android:id="@+id/originalContent"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="@dimen/pt_row_h_padding"
+            android:paddingVertical="@dimen/pt_row_v_padding">
+
+            <com.playtranslate.ui.ClickableTextView
+                android:id="@+id/tvOriginal"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="20sp"
+                android:textColor="?attr/ptText"
+                android:lineSpacingMultiplier="1" />
+
+            <!-- "Scanned by <engine>" + gear. Tapping the row opens the OCR picker.
+                 Mirror of the target's "Translated by" note (tvTranslationNote);
+                 wrap_content so only the label+gear is the tap target. Shown only
+                 for OCR-derived results with >1 available engine (binder).
+                 Vertical padding + an equal NEGATIVE bottom margin enlarge the tap
+                 target to the card's full content-box height (~36dp) without moving
+                 the text or growing the card: paddingTop replaces the old 6dp
+                 marginTop (text stays put), and paddingBottom (= the card's bottom
+                 inset, pt_row_v_padding) is cancelled by marginBottom=-14dp so the
+                 layout footprint is unchanged — the extra height is purely tappable.
+                 Biased downward (no top margin) so it never overlaps tvOriginal and
+                 steals its word-tap touches. -->
+            <LinearLayout
+                android:id="@+id/sourceNoteRow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="-14dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingTop="6dp"
+                android:paddingBottom="14dp"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?attr/selectableItemBackground"
+                android:contentDescription="@string/cd_choose_ocr"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/tvSourceNote"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="?attr/ptTextHint"
+                    android:textSize="11sp" />
+
+                <ImageView
+                    android:id="@+id/btnSourceOcr"
+                    android:layout_width="14dp"
+                    android:layout_height="14dp"
+                    android:layout_marginStart="6dp"
+                    android:contentDescription="@null"
+                    android:src="@drawable/ic_settings"
+                    app:tint="?attr/ptTextHint" />
+
+            </LinearLayout>
+
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+
+</merge>

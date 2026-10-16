@@ -1,0 +1,886 @@
+package com.playtranslate.ui
+
+import android.content.Context
+import android.content.res.ColorStateList
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Rect
+import android.graphics.drawable.GradientDrawable
+import android.util.TypedValue
+import android.view.Gravity
+import android.view.KeyEvent
+import android.view.MotionEvent
+import android.view.View
+import android.view.ViewGroup
+import android.view.ViewOutlineProvider
+import android.view.ViewTreeObserver
+import android.view.WindowManager
+import android.view.animation.AccelerateInterpolator
+import android.view.animation.DecelerateInterpolator
+import android.view.inputmethod.InputMethodManager
+import android.widget.FrameLayout
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.TextView
+import com.playtranslate.R
+import com.playtranslate.overlay.OverlayHost
+import com.playtranslate.overlayThemedContext
+import com.playtranslate.themeColor
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+/**
+ * The floating over-game workspace: a rounded card inset
+ * [R.dimen.pt_workspace_inset] from every screen edge, hosting a back stack
+ * of [WorkspacePage]s — so flows that previously escaped to full-screen
+ * Activities (language picker, word detail, the Anki editor) run over the
+ * game without pausing it. Dismissed by the header X (root page), a tap outside the
+ * card, or B/back at depth 1.
+ *
+ * One full-screen WINDOW whose card and modals are in-window children —
+ * never sibling overlay windows (the MediaProjection QTI clamp dims a
+ * sibling to ~80% and it steals taps; see [FontSizeRangePopover]).
+ * Window/focus/IME plumbing rides [SheetHost], the same seam the capture
+ * sheet uses; controller navigation is [WorkspaceControllerNav].
+ *
+ * Built per open (like [FloatingIconMenu]) — a theme/accent change is
+ * handled by the next open constructing against the new palette, so no
+ * cached-theme drift key is needed. Not rebuilt across display changes:
+ * [com.playtranslate.OverlayUiController] dismisses it when its display
+ * reconfigures, mirroring the capture sheet's policy.
+ */
+class OverlayWorkspace(
+    rawCtx: Context,
+    private val wm: WindowManager,
+    private val displayId: Int,
+    private val overlayHost: OverlayHost,
+    private val sheetHost: SheetHost = WindowSheetHost(wm, displayId, overlayHost),
+) {
+    private val ctx = overlayThemedContext(rawCtx)
+    private val density = ctx.resources.displayMetrics.density
+    private val insetPx = ctx.resources.getDimensionPixelSize(R.dimen.pt_workspace_inset)
+    private val cardRadiusPx = ctx.resources.getDimension(R.dimen.pt_radius) * CARD_RADIUS_MULT
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    /** Invoked once, on any dismissal path. */
+    var onDismiss: (() -> Unit)? = null
+
+    private var dismissed = false
+    private var animatingOut = false
+
+    /** The [WorkspaceHost.awaitEnterSettled] gate. Completed by the enter
+     *  animation's end action, and swept by [dismiss] — a ViewPropertyAnimator
+     *  end action stands down when the animation is cancelled (the exit
+     *  animation replacing it, a detach), so dismissal is the failure bound
+     *  that keeps no awaiter parked on a window that will never settle. */
+    private val enterSettled = CompletableDeferred<Unit>()
+    private var imeMode = false
+    private var nav: WorkspaceControllerNav? = null
+    private var ringSync: ViewTreeObserver.OnPreDrawListener? = null
+
+    private fun dp(v: Float): Int = (v * density).toInt()
+
+    // ── View tree ────────────────────────────────────────────────────────
+
+    private val root = WorkspaceRoot(ctx)
+    private val scrim = View(ctx)
+    private val cardWrap = FrameLayout(ctx)
+    private val card = FrostedCard(ctx)
+
+    /** The card's fill — held so the frost apply can swap it from the opaque
+     *  ptBg fallback to the translucent wash ([FrostBackdrop.WASH_ALPHA]).
+     *  The same instance stays the card's background throughout: it is also
+     *  the outline source for the shadow and the child clip. */
+    private val cardFill = GradientDrawable()
+
+    /** Frosted backdrop: the launch screenshot blurred once
+     *  ([FrostBackdrop.decodeAndBlur], off-main), drawn at full-screen scale
+     *  under the wash and clipped by the card's rounded outline — the
+     *  capture sheet's treatment on the workspace card. Null (no screenshot,
+     *  decode failed, not yet arrived) leaves the opaque ptBg ground. */
+    private var frostBitmap: Bitmap? = null
+    private val frostPaint = Paint(Paint.FILTER_BITMAP_FLAG)
+    private val frostDst = Rect()
+    private var screenWPx = 0
+    private var screenHPx = 0
+
+    /** The header's left button — dual-role: an X on the root page
+     *  (dismisses the workspace), the back chevron when deeper (pops).
+     *  [updateHeader] swaps [leftIcon] per depth. */
+    private val backBtn = FrameLayout(ctx)
+    private val leftIcon = ImageView(ctx)
+    private val titleView = TextView(ctx)
+    private val headerFrame = FrameLayout(ctx)
+    private val pageContainer = FrameLayout(ctx)
+
+    /** The top page's custom header content (e.g. the Anki editor's
+     *  Sentence/Word toggle), swapped by [updateHeader]. While set, the
+     *  title is hidden — the header IS the page's navigation bar, never a
+     *  second one stacked above the content's own. */
+    private var currentHeaderView: View? = null
+    val modalLayer = FrameLayout(ctx)
+    private val focusRing = FocusRingView(ctx)
+
+    init {
+        // The card's elevation shadow draws outside its own bounds; every
+        // ancestor between it and the screen must not clip children.
+        root.clipChildren = false
+        cardWrap.clipChildren = false
+
+        scrim.setBackgroundColor(Color.argb(SCRIM_ALPHA, 0, 0, 0))
+        // A solid fill composites identically under direct alpha modulation,
+        // so the enter/exit fades skip the full-screen offscreen pass the
+        // default (overlapping-rendering) path would pay every frame.
+        scrim.forceHasOverlappingRendering(false)
+        root.addView(
+            scrim,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT,
+            ),
+        )
+
+        card.orientation = LinearLayout.VERTICAL
+        // ptBg, not ptSurface: this card IS the window, so its fill is the
+        // window ground the hosted pages were built against
+        // (`android:windowBackground=?ptBg` in every Activity these flows
+        // came from). One ground for the whole card — the header shares it
+        // and is delineated by the hairline alone, not by a fill. Painting
+        // the card ptSurface instead handed page content a RAISED-surface
+        // colour, which collided with any content using ptSurface as a
+        // recess INSIDE a ptCard (the Anki words helper strip vanished).
+        // Opaque here is the NO-SCREENSHOT ground; a frost apply re-tints
+        // this same drawable to the translucent wash over the backdrop.
+        card.background = cardFill.apply {
+            setColor(ctx.themeColor(R.attr.ptBg))
+            setStroke(dp(1f), ctx.themeColor(R.attr.ptDivider))
+            cornerRadius = cardRadiusPx
+        }
+        // The GradientDrawable supplies the rounded outline: the same shape
+        // drives the elevation shadow and the child clip.
+        card.outlineProvider = ViewOutlineProvider.BACKGROUND
+        card.clipToOutline = true
+        card.elevation = CARD_ELEVATION_DP * density
+
+        // Header: the X/back button (absolute LEFT — WindowManager roots are
+        // absolute; see FloatingIconMenu's RTL rule) + centered bold title,
+        // hairline below — the house toolbar pattern.
+        val header = headerFrame
+        // No fill of its own: the header rides the card's window ground and
+        // the hairline below separates it, so a control a page parks here
+        // via setHeaderView (the Anki editors' Sentence/Word toggle) sits on
+        // ptBg and needs no host-specific restyle.
+        // The 48dp button touch frame overhangs the 44dp header strip.
+        header.clipChildren = false
+        leftIcon.apply {
+            setImageResource(R.drawable.ic_close)
+            imageTintList = ColorStateList.valueOf(ctx.themeColor(R.attr.ptText))
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            val inset = dp(12f)
+            setPadding(inset, inset, inset, inset)
+        }
+        backBtn.addView(
+            leftIcon,
+            FrameLayout.LayoutParams(dp(48f), dp(48f), Gravity.CENTER),
+        )
+        backBtn.contentDescription = ctx.getString(R.string.cd_close)
+        backBtn.foreground = borderlessRipple()
+        backBtn.setOnClickListener {
+            // Root page: the X — a hard close, like the retired corner X.
+            // Deeper: back, through the modal → page → pop ladder.
+            if (stack.size <= 1) animateOutAndDismiss() else onBackPressed()
+        }
+        header.addView(
+            backBtn,
+            FrameLayout.LayoutParams(dp(48f), dp(48f), Gravity.LEFT or Gravity.CENTER_VERTICAL)
+                .apply { leftMargin = dp(4f) },
+        )
+        titleView.setTextColor(ctx.themeColor(R.attr.ptText))
+        titleView.textSize = 16f
+        titleView.setTypeface(null, android.graphics.Typeface.BOLD)
+        titleView.gravity = Gravity.CENTER
+        titleView.maxLines = 1
+        titleView.ellipsize = android.text.TextUtils.TruncateAt.END
+        header.addView(
+            titleView,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER,
+            ).apply {
+                // Keep a long title clear of the chevron well on either side.
+                leftMargin = dp(56f)
+                rightMargin = dp(56f)
+            },
+        )
+        card.addView(
+            header,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(HEADER_H_DP)),
+        )
+        card.addView(
+            View(ctx).apply { setBackgroundColor(ctx.themeColor(R.attr.ptDivider)) },
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1f)),
+        )
+        card.addView(
+            pageContainer,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f),
+        )
+        cardWrap.addView(
+            card,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT,
+            ),
+        )
+        root.addView(
+            cardWrap,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT,
+            ).apply {
+                leftMargin = insetPx
+                topMargin = insetPx
+                rightMargin = insetPx
+                bottomMargin = insetPx
+            },
+        )
+
+        root.addView(
+            modalLayer,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT,
+            ),
+        )
+        root.addView(
+            focusRing,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT,
+            ),
+        )
+    }
+
+    private fun borderlessRipple(): android.graphics.drawable.Drawable? {
+        // Plain-inflater world: resolve the ripple by hand (the
+        // CaptureResultOverlay pattern for app:-less ripples).
+        val tv = TypedValue()
+        ctx.theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, tv, true)
+        return if (tv.resourceId != 0) {
+            androidx.core.content.ContextCompat.getDrawable(ctx, tv.resourceId)
+        } else {
+            null
+        }
+    }
+
+    // ── Back stack ───────────────────────────────────────────────────────
+
+    private class PageEntry(val page: WorkspacePage) {
+        lateinit var view: View
+
+        /** The page's custom header content ([WorkspaceHost.setHeaderView]);
+         *  null = the plain title from [WorkspacePage.title]. */
+        var headerView: View? = null
+    }
+
+    private val stack = ArrayList<PageEntry>()
+
+    /** Pages popped off [stack] whose 150ms exit animation is still
+     *  running: their destruction rides the animation's end action, which
+     *  stands down once [dismissed] — so a dismissal mid-animation must
+     *  sweep them itself, or the popped page's [WorkspacePage.onDestroy]
+     *  (WebViews, audio jobs, pinned files) never runs. */
+    private val poppingEntries = ArrayList<PageEntry>()
+
+    /** The entry whose [WorkspacePage.onCreateView] is currently running —
+     *  a page's [WorkspaceHost.setHeaderView] during creation must land on
+     *  the entry being pushed, which is not on [stack] yet. */
+    private var pushTarget: PageEntry? = null
+
+    private fun push(page: WorkspacePage) {
+        if (dismissed) return
+        // Depth cap: every buried page keeps its views (and any WebView)
+        // alive for scroll-position restore — unbounded cross-reference
+        // drill-downs would hold N renderers on a 4GB handheld. Past the
+        // cap the OLDEST entry is retired; back then bottoms out one page
+        // earlier, which nobody walking six references deep will miss.
+        if (stack.size >= MAX_STACK_DEPTH) {
+            destroyEntry(stack.removeAt(0))
+        }
+        val entry = PageEntry(page)
+        pushTarget = entry
+        val view = try {
+            page.onCreateView(ctx, pageContainer, hostImpl)
+        } finally {
+            pushTarget = null
+        }
+        entry.view = view
+        val prev = stack.lastOrNull()
+        stack.add(entry)
+        pageContainer.addView(
+            view,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT,
+            ),
+        )
+        if (prev != null) {
+            // The buried view is kept in the container (GONE) so its scroll
+            // position survives a pop.
+            prev.view.animate().cancel()
+            prev.view.animate()
+                .alpha(0f)
+                .setDuration(PAGE_FADE_MS)
+                .withEndAction {
+                    if (!dismissed && stack.lastOrNull()?.view !== prev.view) {
+                        prev.view.visibility = View.GONE
+                    }
+                }
+                .start()
+            view.alpha = 0f
+            view.translationX = 12 * density
+            view.animate()
+                .alpha(1f)
+                .translationX(0f)
+                .setDuration(PAGE_FADE_MS)
+                .setInterpolator(DecelerateInterpolator())
+                .start()
+        }
+        setImeMode(false)
+        updateHeader()
+        nav?.clearCursor()
+    }
+
+    private fun pop() {
+        if (dismissed) return
+        if (stack.size <= 1) {
+            animateOutAndDismiss()
+            return
+        }
+        val top = stack.removeAt(stack.size - 1)
+        val revealed = stack.last()
+        revealed.view.animate().cancel()
+        revealed.view.visibility = View.VISIBLE
+        revealed.view.translationX = 0f
+        revealed.view.animate().alpha(1f).setDuration(PAGE_FADE_MS).start()
+        poppingEntries.add(top)
+        top.view.animate().cancel()
+        top.view.animate()
+            .alpha(0f)
+            .translationX(12 * density)
+            .setDuration(PAGE_FADE_MS)
+            .setInterpolator(AccelerateInterpolator())
+            .withEndAction {
+                // Once dismissed, dismiss() has already destroyed this entry
+                // (via poppingEntries) — stand down.
+                if (!dismissed) {
+                    poppingEntries.remove(top)
+                    destroyEntry(top)
+                }
+            }
+            .start()
+        setImeMode(false)
+        updateHeader()
+        nav?.clearCursor()
+    }
+
+    private fun destroyEntry(entry: PageEntry) {
+        pageContainer.removeView(entry.view)
+        entry.page.onDestroy()
+    }
+
+    private fun updateHeader() {
+        val top = stack.lastOrNull() ?: return
+        // Swap the custom header slot for the top page's (the Anki editor's
+        // mode toggle); the plain title stands in when a page has none.
+        val custom = top.headerView
+        if (currentHeaderView !== custom) {
+            currentHeaderView?.let { headerFrame.removeView(it) }
+            custom?.let {
+                (it.parent as? ViewGroup)?.removeView(it)
+                headerFrame.addView(it)
+            }
+            currentHeaderView = custom
+        }
+        titleView.visibility = if (custom != null) View.GONE else View.VISIBLE
+        titleView.text = top.page.title(ctx)
+        // Left button dual-role: X on the root page (dismiss), chevron when
+        // deeper (pop).
+        val atRoot = stack.size <= 1
+        leftIcon.setImageResource(if (atRoot) R.drawable.ic_close else R.drawable.ic_arrow_back)
+        backBtn.contentDescription =
+            ctx.getString(if (atRoot) R.string.cd_close else R.string.cd_back)
+    }
+
+    /** Modal → page.onBack → pop (dismiss at depth 1) — the workspace mirror
+     *  of the sheet's [CaptureResultOverlay] precedence ladder. */
+    private fun onBackPressed() {
+        topLiveModalDismisser()?.let {
+            it()
+            return
+        }
+        if (stack.lastOrNull()?.page?.onBack() == true) return
+        pop()
+    }
+
+    // ── In-window modals ─────────────────────────────────────────────────
+
+    /** Modals whose B-dismissal needs more than a scrim click — currently
+     *  only [OverlayProgress] (its scrim deliberately swallows taps). Keyed
+     *  by the modal's root child in [modalLayer]; pruned when it detaches. */
+    private val modalDismissers = ArrayList<Pair<View, () -> Unit>>()
+
+    private fun topLiveModalDismisser(): (() -> Unit)? {
+        modalDismissers.removeAll { it.first.parent == null }
+        if (modalLayer.childCount == 0) return null
+        val topChild = modalLayer.getChildAt(modalLayer.childCount - 1)
+        modalDismissers.lastOrNull { it.first === topChild }?.let { return it.second }
+        // OverlayAlert's scrim click IS its cancel — performClick runs the
+        // scrim's own listener, exactly like a tap beside the card.
+        return { topChild.performClick() }
+    }
+
+    private val hasModal: Boolean get() = modalLayer.childCount > 0
+
+    /** Whether an Anki card editor is on the back stack: on top, or under a
+     *  picker it opened (deck, card type, audio), still holding its card. */
+    val holdsCardEditor: Boolean get() = stack.any { it.page.isCardEditor }
+
+    /** Show an alert over the pages, inside this window as a page's own
+     *  alerts are ([WorkspaceHost.alert]), for a surface outside the
+     *  workspace asking about what it holds. [build] fills the alert in and
+     *  gets the workspace's themed context to resolve colors against. */
+    fun showAlert(build: OverlayAlert.Builder.(themed: Context) -> Unit): OverlayAlert =
+        OverlayAlert.Builder(ctx).apply { build(ctx) }.showInParent(modalLayer)
+
+    // ── Host seam ────────────────────────────────────────────────────────
+
+    private val hostImpl = object : WorkspaceHost {
+        override val ctx: Context get() = this@OverlayWorkspace.ctx
+        override val scope: CoroutineScope get() = this@OverlayWorkspace.scope
+        override val displayId: Int get() = this@OverlayWorkspace.displayId
+        override val wm: WindowManager get() = this@OverlayWorkspace.wm
+        override val overlayHost: OverlayHost get() = this@OverlayWorkspace.overlayHost
+        override val modalLayer: FrameLayout get() = this@OverlayWorkspace.modalLayer
+
+        override fun push(page: WorkspacePage) = this@OverlayWorkspace.push(page)
+        override fun pop() = this@OverlayWorkspace.pop()
+        override fun dismiss() = animateOutAndDismiss()
+
+        override fun setTitle(title: CharSequence) {
+            titleView.text = title
+        }
+
+        override fun setHeaderView(view: View?) {
+            val entry = pushTarget ?: stack.lastOrNull() ?: return
+            entry.headerView = view
+            // During onCreateView the entry isn't on the stack yet — the
+            // push's own updateHeader applies it once it is.
+            if (pushTarget == null) updateHeader()
+        }
+
+        override suspend fun awaitEnterSettled() = enterSettled.await()
+
+        override fun setImeMode(wantsIme: Boolean) = this@OverlayWorkspace.setImeMode(wantsIme)
+
+        override fun setParkedForActivity(parked: Boolean) =
+            this@OverlayWorkspace.setParkedForActivity(parked)
+
+        override fun showProgress(
+            title: String,
+            onDismiss: (DismissReason) -> Unit,
+        ): OverlayProgress {
+            val progress = OverlayProgress.Builder(ctx)
+                .setTitle(title)
+                .setOnDismiss(onDismiss)
+                .showInParent(modalLayer)
+            // B cancels like the Activity flows' back-press — the progress
+            // scrim itself swallows taps, so it needs an explicit dismisser.
+            modalLayer.getChildAt(modalLayer.childCount - 1)?.let { scrimChild ->
+                modalDismissers.add(scrimChild to { progress.cancel() })
+            }
+            return progress
+        }
+
+        override fun alert(): OverlayAlert.Builder = OverlayAlert.Builder(ctx)
+
+        override fun invalidateNav(prefer: View?) {
+            nav?.revalidateCursor(prefer)
+        }
+    }
+
+    // ── Controller navigation seam ───────────────────────────────────────
+
+    private val tmpLoc = IntArray(2)
+    private val ringItem = Rect()
+    private val ringClip = Rect()
+
+    private val navHost = object : WorkspaceNavHost {
+        override val isModalUp: Boolean get() = hasModal
+        override val isEditing: Boolean get() = imeMode
+        override val isPopoverOpen: Boolean get() = stack.lastOrNull()?.page?.isPopoverOpen == true
+
+        override fun onControllerBack() = onBackPressed()
+
+        override fun navActions(): List<NavAction> =
+            stack.lastOrNull()?.page?.navActions() ?: emptyList()
+
+        // An open page popover is modal: UP off its top row must not escape
+        // into the header (the Sentence/Word toggle), nor may the empty-page
+        // fallback land a fresh cursor there.
+        override fun headerNavActions(): List<NavAction> =
+            if (isPopoverOpen) emptyList() else collectWorkspaceNavActions(currentHeaderView)
+
+        override fun viewInScrollViewport(v: View): Boolean {
+            val sv = stack.lastOrNull()?.page?.scrollView() ?: return false
+            var p: android.view.ViewParent? = v.parent
+            while (p != null) {
+                if (p === sv) return true
+                p = p.parent
+            }
+            return false
+        }
+
+        override fun scrollViewportOnScreen(out: Rect): Boolean {
+            val sv = stack.lastOrNull()?.page?.scrollView() ?: return false
+            if (!sv.isShown || sv.width <= 0 || sv.height <= 0) return false
+            sv.getLocationOnScreen(tmpLoc)
+            out.set(tmpLoc[0], tmpLoc[1], tmpLoc[0] + sv.width, tmpLoc[1] + sv.height)
+            return true
+        }
+
+        override fun scrollBy(dy: Int) {
+            val sv = stack.lastOrNull()?.page?.scrollView() ?: return
+            val child = sv.getChildAt(0) ?: return
+            val max = (child.height + sv.paddingTop + sv.paddingBottom - sv.height)
+                .coerceAtLeast(0)
+            val target = (sv.scrollY + dy).coerceIn(0, max)
+            if (target != sv.scrollY) sv.scrollTo(sv.scrollX, target)
+        }
+
+        override fun ensureVisible(itemOnScreen: Rect) {
+            val viewport = Rect()
+            if (!scrollViewportOnScreen(viewport)) return
+            val dy = when {
+                itemOnScreen.bottom > viewport.bottom -> itemOnScreen.bottom - viewport.bottom
+                itemOnScreen.top < viewport.top -> itemOnScreen.top - viewport.top
+                else -> 0
+            }
+            if (dy != 0) scrollBy(dy)
+        }
+
+        override fun setRing(itemOnScreen: Rect?, clipOnScreen: Rect?) {
+            if (itemOnScreen == null) {
+                focusRing.setTarget(null, null)
+                return
+            }
+            root.getLocationOnScreen(tmpLoc)
+            ringItem.set(itemOnScreen)
+            ringItem.offset(-tmpLoc[0], -tmpLoc[1])
+            if (clipOnScreen != null) {
+                ringClip.set(clipOnScreen)
+                ringClip.offset(-tmpLoc[0], -tmpLoc[1])
+                focusRing.setTarget(ringItem, ringClip)
+            } else {
+                focusRing.setTarget(ringItem, null)
+            }
+        }
+    }
+
+    // ── Focus / IME ──────────────────────────────────────────────────────
+
+    /** Park this window while a helper Activity (the audio picker) runs
+     *  above the game — an overlay window would otherwise cover and block
+     *  it. The gate's result callback un-parks. */
+    private fun setParkedForActivity(parked: Boolean) {
+        if (dismissed) return
+        sheetHost.setParked(root, parked)
+        if (!parked) applyWindowFocusPolicy()
+    }
+
+    private fun setImeMode(wantsIme: Boolean) {
+        if (imeMode == wantsIme) return
+        imeMode = wantsIme
+        if (!wantsIme) {
+            ctx.getSystemService(InputMethodManager::class.java)
+                ?.hideSoftInputFromWindow(root.windowToken, 0)
+            if (nav != null) root.requestFocus()   // pull view focus off the EditText
+        }
+        applyWindowFocusPolicy()
+    }
+
+    /** Single owner of the window's focus/IME flags — the sheet's rule:
+     *  focus for editing (IME) or controller nav (keys + sticks); the IME
+     *  only ever for editing. Non-focusable otherwise, so the nav pill never
+     *  pops over an immersive game while the user only taps. */
+    private fun applyWindowFocusPolicy() {
+        sheetHost.setFocusPolicy(root, focusable = imeMode || nav != null, wantsIme = imeMode)
+    }
+
+    // ── Show / dismiss ───────────────────────────────────────────────────
+
+    fun show(
+        screenW: Int,
+        screenH: Int,
+        screenshotPath: String? = null,
+        initialPage: (WorkspaceHost) -> WorkspacePage,
+    ) {
+        screenWPx = screenW
+        screenHPx = screenH
+        // Frosted ground from the launch screenshot, when the flow has one.
+        // Decode + blur ride IO (the sampled decode is small — the full
+        // screenshot never inflates) and typically land within the first
+        // frames of the enter fade, where the swap from the opaque fallback
+        // is masked by the fade itself; a slow or failed decode just leaves
+        // the flat ptBg ground — the frost never blocks or stalls the open.
+        if (screenshotPath != null) {
+            scope.launch {
+                val frost = withContext(Dispatchers.IO) {
+                    FrostBackdrop.decodeAndBlur(screenshotPath, screenW, screenH)
+                } ?: return@launch
+                if (dismissed) {
+                    frost.recycle()
+                    return@launch
+                }
+                frostBitmap = frost
+                val bg = ctx.themeColor(R.attr.ptBg)
+                cardFill.setColor(
+                    Color.argb(
+                        FrostBackdrop.WORKSPACE_WASH_ALPHA,
+                        Color.red(bg), Color.green(bg), Color.blue(bg),
+                    ),
+                )
+                card.invalidate()
+            }
+        }
+        // Controller nav arms only when a nav-capable device is attached —
+        // evaluated once here, like the capture sheet: the window is created
+        // already-focusable so there's no async flag flip to race.
+        val navActive = hasNavInputDevice(ctx)
+        sheetHost.attach(root, screenW, screenH, focusable = navActive)
+        if (navActive) {
+            root.isFocusable = true
+            root.isFocusableInTouchMode = true
+            root.defaultFocusHighlightEnabled = false
+            root.requestFocus()
+            nav = WorkspaceControllerNav(ctx, navHost)
+        }
+        ringSync = ViewTreeObserver.OnPreDrawListener { nav?.syncRing(); true }.also {
+            root.viewTreeObserver.addOnPreDrawListener(it)
+        }
+        // System-bar buffers as extra margins on the card — the NO_LIMITS
+        // window spans edge to edge behind the bars, so the card steps aside
+        // itself. Bottom: nav-bar buffer + IME lift (FLAG_LAYOUT_NO_LIMITS
+        // makes the window ignore ADJUST_RESIZE, so the card shrinks from the
+        // bottom instead — keeping the top edge, and the header's X, the only
+        // visible exit while the IME is up, pinned). Top: the status bar —
+        // taller than the card's fixed inset, and visible whenever the game
+        // shows its own bars (the capture sheet shares this listener's shape
+        // but is bottom-anchored, which is why it never needed a top half).
+        // Listener-driven, so a bar that grows mid-session (an in-call bar)
+        // re-fires this and the card re-lays out; the display cutout is
+        // folded in because it obscures pixels even while bars are hidden.
+        root.setOnApplyWindowInsetsListener { _, insets ->
+            // A side navigation bar (a phone moves three-button navigation to
+            // a side in landscape) and a side cutout keep the card clear of
+            // that side the same way; see [ContentInsets].
+            val clear = ContentInsets.of(insets)
+            val navInset = clear.bottom
+            val navLeft = clear.left
+            val navRight = clear.right
+            val imeLift = clear.imeLift
+            val topInset = clear.top
+            val lp = cardWrap.layoutParams as FrameLayout.LayoutParams
+            val wantBottom = insetPx + maxOf(navInset, imeLift)
+            val wantTop = insetPx + topInset
+            val wantLeft = insetPx + navLeft
+            val wantRight = insetPx + navRight
+            if (lp.bottomMargin != wantBottom || lp.topMargin != wantTop ||
+                lp.leftMargin != wantLeft || lp.rightMargin != wantRight
+            ) {
+                lp.bottomMargin = wantBottom
+                lp.topMargin = wantTop
+                lp.leftMargin = wantLeft
+                lp.rightMargin = wantRight
+                cardWrap.requestLayout()
+            }
+            insets
+        }
+        push(initialPage(hostImpl))
+        // Enter: scrim fade + card scale-up, the popup house pattern.
+        // withLayer, both directions: a bare alpha+scale on this
+        // near-screen-sized tree pays an offscreen SaveLayer plus a shadow
+        // re-render every frame, against a game that is still animating under
+        // the window. The layer rides [card], not [cardWrap]: the elevation
+        // shadow is drawn by the parent from the card's outline, so it stays
+        // outside the layer instead of being clipped at the layer's bounds.
+        scrim.alpha = 0f
+        scrim.animate().alpha(1f).setDuration(ENTER_MS).start()
+        card.alpha = 0f
+        card.scaleX = 0.96f
+        card.scaleY = 0.96f
+        card.animate()
+            .alpha(1f)
+            .scaleX(1f)
+            .scaleY(1f)
+            .setDuration(ENTER_MS)
+            .setInterpolator(DecelerateInterpolator())
+            .withLayer()
+            .withEndAction { enterSettled.complete(Unit) }
+            .start()
+    }
+
+    fun animateOutAndDismiss() {
+        if (dismissed || animatingOut) return
+        animatingOut = true
+        nav?.clearCursor()
+        scrim.animate().alpha(0f).setDuration(EXIT_MS).start()
+        card.animate()
+            .alpha(0f)
+            .scaleX(0.96f)
+            .scaleY(0.96f)
+            .setDuration(EXIT_MS)
+            .setInterpolator(AccelerateInterpolator())
+            .withLayer()
+            .withEndAction { dismiss() }
+            .start()
+    }
+
+    fun dismiss() {
+        if (dismissed) return
+        dismissed = true
+        imeMode = false
+        nav?.release()
+        nav = null
+        ringSync?.let { root.viewTreeObserver.removeOnPreDrawListener(it) }
+        ringSync = null
+        while (stack.isNotEmpty()) {
+            destroyEntry(stack.removeAt(stack.size - 1))
+        }
+        // Pages mid-pop-animation are off the stack but not yet destroyed —
+        // their end action stands down now that [dismissed] is set (and may
+        // never fire on a detached window), so destroy them here.
+        for (entry in poppingEntries) destroyEntry(entry)
+        poppingEntries.clear()
+        // Sweep the enter gate — a dismissal mid-enter cancelled the
+        // animation and its end action with it. AFTER the destroy loops:
+        // page-scope cancellation has already killed every awaiter, so no
+        // resumed coroutine can run its heavy bind against a window that is
+        // tearing down (Main.immediate resumes synchronously inside
+        // complete()); this is the backstop for an awaiter on any scope a
+        // page failed to cancel.
+        enterSettled.complete(Unit)
+        // Nothing draws past this point (the linger path below goes
+        // INVISIBLE) — release the frost like the sheet does its backdrop.
+        frostBitmap?.recycle()
+        frostBitmap = null
+        // Orphaned-UP guard: a key that went down on this focused window may
+        // still be held — linger the window as an invisible key sink until
+        // the release lands here (see [WindowKeyPairGuard]).
+        if (root.keyGuard.hasPendingDown && sheetHost.beginKeySink(root)) {
+            root.keyGuard.beginLinger { sheetHost.detach(root) }
+        } else {
+            sheetHost.detach(root)
+        }
+        scope.cancel()
+        onDismiss?.invoke()
+    }
+
+    // ── Card ─────────────────────────────────────────────────────────────
+
+    /** The card surface. Draws the frosted backdrop FIRST (before super →
+     *  under the translucent [cardFill] wash and the content), scaled to
+     *  full screen and offset so the slice aligns 1:1 with the screen region
+     *  the card covers; clipToOutline rounds it — the sheet's BodyView
+     *  treatment. Offsets are LAYOUT coords (never transforms), so the
+     *  enter/exit scale carries the frost with the card instead of sliding
+     *  it, and an inset-driven margin change re-aligns on its own relayout. */
+    private inner class FrostedCard(c: Context) : LinearLayout(c) {
+        override fun draw(canvas: Canvas) {
+            frostBitmap?.let {
+                val x = cardWrap.left + left
+                val y = cardWrap.top + top
+                frostDst.set(-x, -y, screenWPx - x, screenHPx - y)
+                canvas.drawBitmap(it, null, frostDst, frostPaint)
+            }
+            super.draw(canvas)
+        }
+    }
+
+    // ── Root ─────────────────────────────────────────────────────────────
+
+    /** Full-screen transparent host: owns tap-outside dismissal (consuming
+     *  the DOWN so it can never leak to the game) and the key ladder. */
+    private inner class WorkspaceRoot(c: Context) : FrameLayout(c) {
+        val keyGuard = WindowKeyPairGuard()
+
+        /** Hardware back/Escape when controller nav is off (IME editing via a
+         *  physical keyboard): armed on the first DOWN, fired on the consumed
+         *  UP — the same orphaned-UP rule as nav's back. */
+        private var backArmed = false
+
+        override fun dispatchKeyEvent(ev: KeyEvent): Boolean {
+            if (keyGuard.isLingering) return keyGuard.lingerKey(ev)
+            keyGuard.track(ev)
+            if (nav?.handleKey(ev) == true) return true
+            if (ControllerKeys.isBack(ev.keyCode)) {
+                when (ev.action) {
+                    KeyEvent.ACTION_DOWN -> {
+                        if (ev.repeatCount == 0) backArmed = true
+                        return true
+                    }
+                    KeyEvent.ACTION_UP -> {
+                        if (backArmed) {
+                            backArmed = false
+                            onBackPressed()
+                        }
+                        return true
+                    }
+                }
+            }
+            return super.dispatchKeyEvent(ev)
+        }
+
+        override fun onGenericMotionEvent(ev: MotionEvent): Boolean =
+            nav?.handleGenericMotion(ev) == true || super.onGenericMotionEvent(ev)
+
+        private val hitRect = Rect()
+
+        private fun hits(v: View, ev: MotionEvent): Boolean {
+            v.getHitRect(hitRect)
+            return hitRect.contains(ev.x.toInt(), ev.y.toInt())
+        }
+
+        override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+            // A modal owns the whole window — its own scrim decides what an
+            // outside tap means (the alert dismisses, progress swallows).
+            if (hasModal) return super.dispatchTouchEvent(ev)
+            when (ev.actionMasked) {
+                MotionEvent.ACTION_DOWN ->
+                    if (!hits(cardWrap, ev)) {
+                        animateOutAndDismiss()
+                        return true   // consumed — never leaks to the game
+                    }
+                MotionEvent.ACTION_OUTSIDE -> {
+                    animateOutAndDismiss()
+                    return true
+                }
+            }
+            return super.dispatchTouchEvent(ev)
+        }
+    }
+
+    private companion object {
+        /** The sheet's corner ratio — a 32dp-inset card wants the larger
+         *  radius (21dp at the standard 14dp token). */
+        const val CARD_RADIUS_MULT = 1.5f
+        const val CARD_ELEVATION_DP = 12f
+        const val HEADER_H_DP = 44f
+        const val SCRIM_ALPHA = 0x80
+        /** Live pages kept on the back stack (see [push]'s retirement rule). */
+        const val MAX_STACK_DEPTH = 6
+        const val ENTER_MS = 200L
+        const val EXIT_MS = 160L
+        const val PAGE_FADE_MS = 150L
+    }
+}

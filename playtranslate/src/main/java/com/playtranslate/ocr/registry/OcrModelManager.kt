@@ -1,0 +1,658 @@
+package com.playtranslate.ocr.registry
+
+import android.content.Context
+import android.util.Log
+import com.playtranslate.OcrTokenScope
+import com.playtranslate.Prefs
+import com.playtranslate.R
+import com.playtranslate.language.LanguagePackStore
+import com.playtranslate.language.OcrBackend
+import com.playtranslate.language.SourceLangId
+import com.playtranslate.language.SourceLanguageProfiles
+import com.playtranslate.ocr.core.OcrEngine
+import com.playtranslate.ocr.meiki.MeikiBridge
+import com.playtranslate.ocr.paddle.PaddleOcrBridge
+import com.playtranslate.translation.llm.OnDeviceLlmDownloader
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+/**
+ * The OCR model-pack reconciler. The on-disk pack set is a PURE function of the
+ * installed source languages and their backends, expressed as two sets (see [plan]):
+ * **required** (each language's SELECTED backend's packs — drives downloads) and
+ * **retained** (each language's ALL backends' packs — protects from deletion). A
+ * pack is reclaimed only when it falls out of `retained`, i.e. no installed language
+ * can use it — so switching a language's OCR engine keeps the deselected pack on
+ * disk for a free re-select; only REMOVING the language orphans it. Pack SHARING is
+ * expressed solely by a shared catalog key (ja/zh/en/latin all → "paddle-rec-unified"),
+ * so deletion safety is automatic set-math — no refcounts.
+ *
+ * Split per the lifecycle contract: [plan] is pure (JVM-testable); [applyDownloads]
+ * is the suspend/IO effect (additive, safe to run anytime); [sweepOrphans] deletes
+ * orphans and MUST run only at quiescence (no live session), wired in Phase 3.
+ * Nothing here closes a live native session — selection only mutates Prefs, and the
+ * registry resolves fresh on the next `engineFor`.
+ */
+object OcrModelManager {
+
+    private const val TAG = "OcrModelManager"
+
+    data class Plan(
+        /** Packs every installed language's chosen backend needs (drives download). */
+        val required: Set<String>,
+        /** required − installed. */
+        val toDownload: Set<String>,
+        /** installed − retained: packs no installed language can use (its source
+         *  language was removed), swept only at quiescence. `required ⊆ retained` by
+         *  construction, so a needed pack is never here. */
+        val toDelete: Set<String>,
+    )
+
+    /** PURE reconciler. Two sets drive the plan:
+     *   - **required** = ⋃ each installed language's SELECTED backend's packKeys —
+     *     the packs we must have on disk, so `toDownload = required − installed`.
+     *   - **retained** = ⋃ each installed language's ALL backends' packKeys — every
+     *     pack an installed language COULD use. `toDelete = installed − retained`, so
+     *     a pack is reclaimed only when no installed language can use it (its source
+     *     language was removed) — NOT merely because a different backend is selected.
+     *
+     *  `retained` is SEEDED from `required`, so `required ⊆ retained` holds by
+     *  construction: the sweep can never reclaim a pack the selected backend needs,
+     *  and `toDownload ∩ toDelete = ∅`, regardless of how selection resolves relative
+     *  to [allBackends]. */
+    fun plan(
+        installedLangs: Set<SourceLangId>,
+        selectedBackend: (SourceLangId) -> OcrBackend?,
+        allBackends: (SourceLangId) -> List<OcrBackend>,
+        installedPacks: Set<String>,
+    ): Plan {
+        val required = installedLangs.flatMapTo(HashSet()) { selectedBackend(it)?.packKeys.orEmpty() }
+        // Seed retained with required so `required ⊆ retained` is true by construction:
+        // a needed pack can never appear in toDelete, independent of allBackends.
+        val retained = HashSet(required).apply {
+            for (lang in installedLangs) for (b in allBackends(lang)) addAll(b.packKeys)
+        }
+        return Plan(required, required - installedPacks, installedPacks - retained)
+    }
+
+    /** App context pushed at startup (PlayTranslateApplication) so the registry +
+     *  bridges resolve installed packs / Prefs without threading a Context through
+     *  `recognise()`. */
+    @Volatile var appContext: Context? = null
+
+    /**
+     * Production OCR engine for [id] paired with the backend that produced it:
+     * the resolved backend if its pack is installed, else null → the registry's
+     * ML Kit floor. Returning the backend (not just the engine) lets the registry
+     * report what actually ran without re-deriving the resolution rule. Selection
+     * only mutates Prefs, so this resolves fresh each call (no stale cached
+     * engine); the native session is owned + cached by the bridge (closed only at
+     * quiescent teardown).
+     *
+     * Takes the EXACT source language, never a translation code: ZH and ZH_HANT
+     * both OCR as "zh", and rebuilding the language from that code read
+     * Simplified's selection for a Traditional user (2026-10-06). [scope] picks
+     * the stored selection the way every label, picker and guard does
+     * ([selectedBackend]), so what runs is what the UI names. [isInstalled] and
+     * [build] are seams for the JVM test that pins the id flowing through; the
+     * native bridges cannot load there.
+     */
+    fun engineForSelected(
+        id: SourceLangId,
+        scope: OcrTokenScope = OcrTokenScope.GLOBAL,
+        isInstalled: ((packKey: String) -> Boolean)? = null,
+        build: ((OcrBackend) -> OcrEngine?)? = null,
+    ): Pair<OcrBackend, OcrEngine>? {
+        val ctx = appContext ?: return null
+        val installed = isInstalled ?: { key -> OcrPackModelHelper(key).isInstalled(ctx) }
+        val chosen = selectedBackend(ctx, id, scope, installed) ?: return null
+        // The ML Kit floor has no pack and is built by the registry.
+        if (chosen.packKeys.isEmpty() || !chosen.packKeys.all(installed)) return null
+        val engine = (build ?: { backend -> buildEngine(ctx, backend) })(chosen) ?: return null
+        return chosen to engine
+    }
+
+    /** The bridge-owned engine for a pack-backed [backend]; null for the pack-less
+     *  kinds, which the registry builds. */
+    private fun buildEngine(ctx: Context, backend: OcrBackend): OcrEngine? = when (backend) {
+        is OcrBackend.Meiki -> MeikiBridge.engine(ctx, backend.packKey)
+        is OcrBackend.Paddle -> PaddleOcrBridge.engine(ctx, backend.recPackKey, backend.fast)
+        else -> null
+    }
+
+    /** Every OCR pack key the app knows about (single source of truth = the
+     *  profiles' `ocrBackends`), so the on-disk universe never drifts from the keys. */
+    val ALL_PACK_KEYS: Set<String> =
+        SourceLangId.entries.flatMapTo(HashSet()) { id ->
+            SourceLanguageProfiles[id].ocrBackends.flatMap { it.packKeys }
+        }
+
+    private fun helper(packKey: String) = OcrPackModelHelper(packKey)
+
+    /** Pure runtime-compatibility gate (no I/O, so JVM-testable): an MNN-backed OCR
+     *  engine (Meiki/Paddle) runs only on the arm64 MNN native runtime, so it is
+     *  unavailable on a 32-bit process even when its pack is shippable. The app
+     *  ships an armeabi-v7a slice (installs on 32-bit) but `:mnn` is arm64-only, so
+     *  without this gate setup could default/download Meiki/Paddle and Settings
+     *  could select them, only for engine creation to fail and silently drop to ML
+     *  Kit — after burning the pack download. [mnnAvailable] mirrors
+     *  `OnDeviceLlmBackend.supportsRequiredAbi()` ([android.os.Process.is64Bit]);
+     *  pass it explicitly in tests. */
+    /** MNN-backed OCR requires a 64-bit process (the :mnn module ships arm64-only). The
+     *  single source for that ABI gate — mirrors OnDeviceLlmBackend.supportsRequiredAbi().
+     *  Also used by the manga-ocr refiner gate + settings cell. */
+    fun isMnnAvailable(): Boolean = android.os.Process.is64Bit()
+
+    fun isRuntimeCompatible(
+        backend: OcrBackend,
+        mnnAvailable: Boolean = isMnnAvailable(),
+    ): Boolean = !backend.requiresMnn || mnnAvailable
+
+    /** A backend is offerable iff its native runtime is compatible AND every pack it
+     *  needs has a shippable catalog entry. ML Kit (no packs) is always available; a
+     *  recognizer pack with a missing or placeholder catalog entry makes its
+     *  backend unavailable until it ships; an MNN engine on a 32-bit device is
+     *  unavailable (see [isRuntimeCompatible]). Gating here is the single chokepoint:
+     *  [availableBackends] (the picker), [downloadDefaultForSource], and
+     *  [selectedBackend] all flow through it, and the [selectedBackend] fallback is
+     *  always the pack-less ML Kit floor — so a 32-bit device never downloads or
+     *  selects an engine it can't load. */
+    fun isBackendAvailable(ctx: Context, backend: OcrBackend): Boolean =
+        isRuntimeCompatible(backend) && backend.packKeys.all { OcrPackModelHelper(it).isShippable(ctx) }
+
+    /** [id]'s priority list filtered to currently-deliverable engines (always keeps
+     *  the ML Kit floor). */
+    fun availableBackends(ctx: Context, id: SourceLangId): List<OcrBackend> =
+        SourceLanguageProfiles[id].ocrBackends.filter { isBackendAvailable(ctx, it) }
+
+    /** The backend [id] resolves to under [scope]: the stored selection if still
+     *  deliverable, else the best deliverable backend whose packs are on disk, else
+     *  the ML Kit floor, else — for a no-floor language (Cyrillic) — its single
+     *  deliverable recognizer. NULL only when nothing is deliverable on this device
+     *  (a no-floor language on a 32-bit process). See [resolveSelectedBackend] for
+     *  the rule. This is the ONE resolution: the engine ([engineForSelected]), the
+     *  Settings rows, the pickers, the labels and the delete guards all read it, so
+     *  none can name a backend another one runs. [scope] resolves a tool's own
+     *  selection, inheriting the global one until set ([Prefs.ocrBackendToken]). */
+    fun selectedBackend(
+        ctx: Context,
+        id: SourceLangId,
+        scope: OcrTokenScope = OcrTokenScope.GLOBAL,
+        isInstalled: (packKey: String) -> Boolean = { OcrPackModelHelper(it).isInstalled(ctx) },
+    ): OcrBackend? =
+        resolveSelectedBackend(
+            available = availableBackends(ctx, id),
+            token = Prefs(ctx).ocrBackendToken(id, scope),
+            mlKitFloor = SourceLanguageProfiles[id].mlKitFloor,
+            isInstalled = isInstalled,
+        )
+
+    /** PURE selection rule (JVM-testable): the [token]'s backend if it's in
+     *  [available]; else the first [available] backend whose packs are all on disk
+     *  ([isInstalled]), which is the language's default once its recognizer is
+     *  present, and the pack-less ML Kit floor where that floor is listed first
+     *  (Vietnamese, Turkish, Polish); else [mlKitFloor]; else the top [available]
+     *  backend. An unset token therefore MEANS "the default": nothing seeds a token
+     *  at setup, at launch or on a language switch, so a language reached by a path
+     *  that skips those (the icon's Simplified/Traditional toggle) runs the same
+     *  default as one reached through the picker. A stored token is an explicit
+     *  choice, an ML Kit pick included. The final fallback keeps the token
+     *  non-load-bearing for no-floor languages (Cyrillic, where [mlKitFloor] is
+     *  null): a missing/stale token resolves to the backend the installed pack
+     *  already represents, so [engineForSelected] never drops to the empty engine
+     *  over a bookkeeping gap. Returns null only when [available] is empty and
+     *  there is no floor (a no-floor language with no deliverable recognizer on
+     *  this device). */
+    fun resolveSelectedBackend(
+        available: List<OcrBackend>,
+        token: String?,
+        mlKitFloor: OcrBackend?,
+        isInstalled: (packKey: String) -> Boolean,
+    ): OcrBackend? =
+        available.firstOrNull { it.selectionToken == token }
+            ?: available.firstOrNull { it.packKeys.all(isInstalled) }
+            ?: mlKitFloor
+            ?: available.firstOrNull()
+
+    /** True iff [id] has an ML Kit OCR recognizer that needs no download — the
+     *  always-available floor. False for scripts ML Kit can't read (Cyrillic),
+     *  whose only OCR is a downloadable MNN pack. PURE (profile-only). */
+    fun hasMlKitFloor(id: SourceLangId): Boolean = SourceLanguageProfiles[id].mlKitFloor != null
+
+    /** The engine the slow-OCR rescue prompt offers when [selected] is dragging.
+     *  Floored languages keep the ML Kit [mlKitFloor]: its latency is flat with
+     *  text density — the right property for the text-heavy captures that trip
+     *  the slow threshold, where the glyph-count-bound MNN engines converge with
+     *  or fall behind it. No-floor languages (Cyrillic/Arabic/Thai) get the
+     *  Paddle FAST tier instead — the only faster option they have; it shares
+     *  the selected accurate tier's pack files, so whenever accurate is running
+     *  (a slow pass just proved it is), fast is installed by construction.
+     *  Null when there is nothing faster to offer: the selection already IS the
+     *  rescue engine, or no fast tier exists in [available]. PURE. */
+    fun slowOcrRescue(
+        available: List<OcrBackend>,
+        selected: OcrBackend,
+        mlKitFloor: OcrBackend?,
+    ): OcrBackend? {
+        val rescue = mlKitFloor
+            ?: available.firstOrNull { (it as? OcrBackend.Paddle)?.fast == true }
+            ?: return null
+        return rescue.takeIf { it.selectionToken != selected.selectionToken }
+    }
+
+    /** True iff [id]'s mandatory OCR is satisfied. A floored language always is
+     *  (ML Kit needs no pack); a no-floor language (Russian) is iff the backend it
+     *  would actually resolve to is deliverable on this device AND its packs are on
+     *  disk — see [requiredOcrReady]. */
+    fun isRequiredOcrInstalled(ctx: Context, id: SourceLangId): Boolean =
+        // Floored languages short-circuit before resolving, which reads the disk.
+        hasMlKitFloor(id) || requiredOcrReady(
+            hasFloor = false,
+            selected = selectedBackend(ctx, id),
+            isInstalled = { OcrPackModelHelper(it).isInstalled(ctx) },
+        )
+
+    /** PURE readiness rule (JVM-testable): a floored language is always OCR-ready;
+     *  a no-floor language is ready iff [selected] (the backend [resolveSelectedBackend]
+     *  picks — non-null only when runtime-compatible + shippable on this device) has
+     *  all its packs on disk. Tying readiness to the RESOLVED backend, not raw profile
+     *  packKeys, guarantees `isFullyInstalled ⇒ engineForSelected loads a real engine`:
+     *  a no-floor language can't read as installed on a device that can't run its only
+     *  recognizer (the arm64-only Cyrillic pack on a 32-bit process). */
+    fun requiredOcrReady(
+        hasFloor: Boolean,
+        selected: OcrBackend?,
+        isInstalled: (String) -> Boolean,
+    ): Boolean {
+        if (hasFloor) return true
+        val backend = selected ?: return false
+        return backend.packKeys.isNotEmpty() && backend.packKeys.all(isInstalled)
+    }
+
+    /** Concept-A completeness: [id]'s dictionary pack is present AND its required
+     *  OCR is available. Drives the language-selection trash-can and the blocking
+     *  OCR download at selection — a no-floor language (Russian) without its
+     *  recognizer pack reads as "not installed" (no trash; re-select to download). */
+    fun isFullyInstalled(ctx: Context, id: SourceLangId): Boolean =
+        LanguagePackStore.isInstalled(ctx, id) && isRequiredOcrInstalled(ctx, id)
+
+    /** Every source language [isFullyInstalled], in [SourceLangId] order: the
+     *  languages the user has downloaded, as the source picker lists them
+     *  under Suggested. The two Chinese variants share one pack, so a Chinese
+     *  download counts as two. The floating icon's "Change game language"
+     *  switches between these when there are exactly two (Gilad, 2026-09-28:
+     *  counted as the picker's rows). */
+    fun fullyInstalledSources(ctx: Context): List<SourceLangId> =
+        SourceLangId.entries.filter { isFullyInstalled(ctx, it) }
+
+    /** True iff [id] cannot OCR on THIS device: no ML Kit floor AND no
+     *  runtime-compatible recognizer (e.g. Russian on a 32-bit device, where the
+     *  arm64-only Cyrillic MNN pack can't run). Drives the disabled source row. */
+    fun isOcrUnavailableOnDevice(ctx: Context, id: SourceLangId): Boolean =
+        !hasMlKitFloor(id) && availableBackends(ctx, id).isEmpty()
+
+    /** The two launch-time outcomes for a grandfathered source's default OCR. */
+    enum class OcrMigration {
+        /** Nothing to do: an explicit choice, no floor, the floor IS the default, or
+         *  the default's packs are already on disk, which an unset selection resolves
+         *  to by itself ([resolveSelectedBackend]). */
+        NONE,
+        /** Better default's pack still missing → offer a download. */
+        OFFER_DOWNLOAD,
+    }
+
+    /**
+     * PURE migration decision (JVM-testable) for a floored source whose user may
+     * predate PaddleOCR/Meiki. Inputs are the raw facts; [migrationFor] binds them
+     * from Prefs/profile/disk.
+     *
+     * [NONE] when the user already chose a backend ([hasStoredChoice] — respect it,
+     * including an explicit ML Kit pick); when there is no ML Kit [floor] (a
+     * no-floor source like Russian already resolves to its lone recognizer
+     * regardless of token, see [resolveSelectedBackend], so it needs no migration);
+     * when the top [best] engine is absent, IS the floor, or has no packs
+     * (Vietnamese/Turkish default to ML Kit); or when every pack of [best] is
+     * already installed, since an unset selection resolves to it. Otherwise
+     * [OFFER_DOWNLOAD].
+     */
+    fun decideOcrMigration(
+        hasStoredChoice: Boolean,
+        floor: OcrBackend?,
+        best: OcrBackend?,
+        isInstalled: (String) -> Boolean,
+    ): OcrMigration {
+        if (hasStoredChoice || floor == null) return OcrMigration.NONE
+        if (best == null || best == floor || best.packKeys.isEmpty()) return OcrMigration.NONE
+        return if (best.packKeys.all(isInstalled)) OcrMigration.NONE else OcrMigration.OFFER_DOWNLOAD
+    }
+
+    /** [decideOcrMigration] bound to live state for [id]. */
+    private fun migrationFor(ctx: Context, id: SourceLangId): OcrMigration =
+        decideOcrMigration(
+            hasStoredChoice = Prefs(ctx).ocrBackendToken(id) != null,
+            floor = SourceLanguageProfiles[id].mlKitFloor,
+            best = availableBackends(ctx, id).firstOrNull(),
+            isInstalled = { OcrPackModelHelper(it).isInstalled(ctx) },
+        )
+
+    /** True iff installed, floored source [id] has a better default recognizer the
+     *  user never opted into whose pack still needs downloading — a grandfathered
+     *  user on the ML Kit floor with a superior default (PaddleOCR / Meiki)
+     *  available but absent. Drives the launch-time "update your source pack" nudge,
+     *  which routes the pack through the upgrade flow purely to fetch the recognizer
+     *  (the dict install no-ops — see `LanguagePackStore.install`'s idempotency
+     *  guard). Once the pack is present, an unset selection resolves to it
+     *  ([resolveSelectedBackend]); nothing is written. */
+    fun isDefaultOcrUpgradeAvailable(ctx: Context, id: SourceLangId): Boolean =
+        migrationFor(ctx, id) == OcrMigration.OFFER_DOWNLOAD
+
+    /** PURE: should the launch flow offer to download the user's CHOSEN OCR
+     *  recognizer? True iff [selected] is a real pack-backed backend (not the
+     *  pack-less ML Kit floor) with a pack not on disk. Complements
+     *  [decideOcrMigration], which by design returns NONE for any stored choice:
+     *  when a stored "paddle"/"meiki" token resolves to a pack the user lacks — e.g.
+     *  after the cjk/latin → unified pack-key migration, where the coarse token still
+     *  resolves but to a new, ABSENT pack — this catches it so the recognizer is
+     *  re-fetched instead of silently dropping to the ML Kit floor. */
+    fun selectedOcrNeedsDownload(
+        selected: OcrBackend?,
+        isInstalled: (String) -> Boolean,
+    ): Boolean {
+        val backend = selected ?: return false
+        return backend.packKeys.isNotEmpty() && !backend.packKeys.all(isInstalled)
+    }
+
+    /** [selectedOcrNeedsDownload] bound to live state for [id], scoped to users with
+     *  an EXPLICIT stored OCR choice (a no-choice source's recognizer is handled by
+     *  the grandfathered [isDefaultOcrUpgradeAvailable] path). Drives the launch OCR
+     *  download offer in `MainActivity.maybePromptForPackUpgrade`. */
+    fun isSelectedOcrPackMissing(ctx: Context, id: SourceLangId): Boolean =
+        Prefs(ctx).ocrBackendToken(id) != null &&
+            selectedOcrNeedsDownload(selectedBackend(ctx, id)) { OcrPackModelHelper(it).isInstalled(ctx) }
+
+    private fun installedPacks(ctx: Context): Set<String> =
+        ALL_PACK_KEYS.filterTo(HashSet()) { helper(it).isInstalled(ctx) }
+
+    fun currentPlan(ctx: Context): Plan =
+        plan(
+            LanguagePackStore.installedCodes(ctx),
+            selectedBackend = { selectedBackend(ctx, it) },
+            // RAW profile backends (not availability-filtered): a runtime-incompatible
+            // / non-shippable backend's pack can never reach disk, so it's never in
+            // installedPacks and can't change toDelete — and the raw list keeps this
+            // provider ctx-free. (`required` uses the filtered selectedBackend because
+            // that is the pack we actually download.)
+            allBackends = { SourceLanguageProfiles[it].ocrBackends },
+            installedPacks = installedPacks(ctx),
+        )
+
+    /** Fetch one pack, best-effort. The downloader RETURNS its terminal state
+     *  rather than throwing for failure/refusal (only cancellation propagates, via
+     *  its withContext boundary rethrowing CancellationException) — so a discarded
+     *  Outcome would let a failed/refused pack vanish silently into the ML Kit
+     *  fallback. Log the reason here so an exported diagnostic log can explain why
+     *  a pack didn't land. */
+    private suspend fun downloadPack(
+        ctx: Context,
+        key: String,
+        onProgress: (OnDeviceLlmDownloader.Progress) -> Unit,
+    ) {
+        val downloader = OnDeviceLlmDownloader(ctx.applicationContext, helper(key), totalMemFloorBytes = 0L)
+        when (val outcome = downloader.run(onProgress)) {
+            is OnDeviceLlmDownloader.Outcome.Failed ->
+                Log.w(TAG, "OCR pack '$key' download failed: ${outcome.reason}", outcome.cause)
+            is OnDeviceLlmDownloader.Outcome.Refused ->
+                Log.w(TAG, "OCR pack '$key' download refused: ${outcome.reason}")
+            // Success: nothing to log. Cancelled: shadowed by the downloader's
+            // withContext rethrow on Job-cancel, so it's only reachable via a
+            // non-Job cancellation (e.g. an inner timeout) — best-effort, ignore.
+            OnDeviceLlmDownloader.Outcome.Success,
+            OnDeviceLlmDownloader.Outcome.Cancelled -> Unit
+        }
+    }
+
+    /** Download every pack in [plan].toDownload, best-effort (a failed pack stays
+     *  absent → the registry falls back to ML Kit; [downloadPack] logs the reason).
+     *  Suspend/IO. */
+    suspend fun applyDownloads(
+        ctx: Context,
+        plan: Plan = currentPlan(ctx),
+        onProgress: (packKey: String, p: OnDeviceLlmDownloader.Progress) -> Unit = { _, _ -> },
+    ) {
+        for (key in plan.toDownload) {
+            downloadPack(ctx, key) { p -> onProgress(key, p) }
+        }
+    }
+
+    /** Ensure the OCR recognizer pack(s) for [id]'s active backend are on disk, as
+     *  a VISIBLE step folded into the language-setup download flow (its own
+     *  progress view, like the source pack + offline translation models). Reports
+     *  byte progress via [onBytes]. Two cases:
+     *
+     *   - **Already chosen** (token set): re-fetch THAT backend's missing packs and
+     *     leave the choice as-is. This is the source-switch recovery path — e.g. a
+     *     shared recognizer pack reclaimed by the Settings OCR trash while another
+     *     language still has it selected re-downloads the next time that language
+     *     becomes the source ([deleteOcrPack]'s contract).
+     *   - **No choice yet**: fetch the top deliverable DEFAULT's packs. Nothing is
+     *     persisted: an unset selection resolves to the default once its packs
+     *     are on disk ([resolveSelectedBackend]), and a cancelled/failed fetch
+     *     leaves the source on the ML Kit floor AND eligible for the launch-time
+     *     re-nudge ([isDefaultOcrUpgradeAvailable]) instead of pinned to an absent
+     *     recognizer.
+     *
+     *  No-op when the active backend is the pack-less ML Kit floor
+     *  (Vietnamese/Turkish) or its packs are already present.
+     *
+     *  Cancellation propagates: if the enclosing coroutine is cancelled the
+     *  downloader's withContext boundary rethrows CancellationException, aborting
+     *  setup like any other step. A network/verify failure or RAM/storage refusal
+     *  does NOT throw — [downloadPack] logs it and leaves the ML Kit floor, so a
+     *  failed OCR download never aborts adding the language. */
+    suspend fun downloadDefaultForSource(
+        ctx: Context,
+        id: SourceLangId,
+        onBytes: (received: Long, total: Long) -> Unit,
+    ) {
+        val hasChoice = Prefs(ctx).ocrBackendToken(id) != null
+        // The backend whose packs to ensure: the existing choice if any (recover
+        // ITS packs — selectedBackend resolves the token), else the top deliverable
+        // DEFAULT. (When unchosen, selectedBackend resolves to the floor while the
+        // default's pack is absent, so pick the default explicitly to fetch it.)
+        val backend = if (hasChoice) selectedBackend(ctx, id) else availableBackends(ctx, id).firstOrNull()
+        backend ?: return
+        if (backend.packKeys.isEmpty()) return // ML Kit floor — nothing to download
+        for (key in backend.packKeys.filter { !OcrPackModelHelper(it).isInstalled(ctx) }) {
+            downloadPack(ctx, key) { p ->
+                if (p is OnDeviceLlmDownloader.Progress.Downloading) onBytes(p.received, p.total)
+            }
+        }
+    }
+
+    /** Download [backend]'s not-yet-installed packs, best-effort (failures logged
+     *  by [downloadPack], leaving the ML Kit floor), and report whether [backend]
+     *  is fully installed afterward. Deliberately does NOT mutate Prefs: an engine
+     *  SWITCH must persist the new selection only AFTER this returns true, so a
+     *  failed or cancelled download never strands the user off the still-working
+     *  previous engine. The previous engine's pack is retained on disk either way
+     *  (see [plan]/[sweepOrphans]) for a free switch back. Suspend/IO. */
+    suspend fun installBackend(
+        ctx: Context,
+        backend: OcrBackend,
+        onProgress: (packKey: String, p: OnDeviceLlmDownloader.Progress) -> Unit = { _, _ -> },
+    ): Boolean = withContext(Dispatchers.IO) {
+        val missing = backend.packKeys.filterTo(HashSet()) { !helper(it).isInstalled(ctx) }
+        applyDownloads(ctx, Plan(backend.packKeys.toSet(), missing, emptySet()), onProgress)
+        backend.packKeys.all { helper(it).isInstalled(ctx) }
+    }
+
+    /** Download one standalone OCR pack — a pack NOT owned by any selectable
+     *  [OcrBackend] (e.g. the manga-ocr refinement model, gated behind its own
+     *  toggle rather than the engine picker) — best-effort, and report whether it is
+     *  installed afterward. Same downloader + edge-case handling as the engine packs
+     *  ([downloadPack]: Range resume, size+SHA verify, cancel/disk/offline), and the
+     *  same out-of-[ALL_PACK_KEYS] status that keeps the orphan sweep from reclaiming
+     *  it. Deliberately Prefs-free — the toggle's owner persists enablement. Suspend/IO. */
+    suspend fun ensurePack(
+        ctx: Context,
+        key: String,
+        onProgress: (OnDeviceLlmDownloader.Progress) -> Unit = {},
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (!helper(key).isInstalled(ctx)) downloadPack(ctx, key, onProgress)
+        helper(key).isInstalled(ctx)
+    }
+
+    /** Delete orphaned packs (installed − retained: packs no installed language can
+     *  use, e.g. left behind when a source language was removed) that aren't
+     *  currently loaded. Deselecting a language's OCR engine does NOT orphan its
+     *  pack — every backend of an installed language is retained, so swapping engines
+     *  keeps the pack on disk for a free re-select (the user reclaims it explicitly
+     *  via the Settings OCR trash, [deleteOcrPack]).
+     *
+     *  MUST be called ONLY from the launch-time reclaim (MainActivity, after pack
+     *  upgrades/migrations settle) — never from an interactive language-delete flow.
+     *  Rationale: a sweep only targets packs NO installed language can use, and a
+     *  live capture only resolves the selected (hence retained) pack for its
+     *  language, so the two sets are disjoint. At launch the installed-language set
+     *  is stable and no capture/download is in flight.
+     *
+     *  [isLoaded] stays as defense-in-depth: a pack backing an already-created live
+     *  session is never deleted even if this is somehow called off-quiescence. */
+    fun sweepOrphans(
+        ctx: Context,
+        isLoaded: (packKey: String) -> Boolean = { MeikiBridge.isLoaded(it) || PaddleOcrBridge.isLoaded(it) },
+    ) {
+        for (key in currentPlan(ctx).toDelete) {
+            if (!isLoaded(key)) helper(key).delete(ctx)
+        }
+    }
+
+    /** OCR packs RETIRED by a wiring change: their keys no longer appear in any
+     *  profile, so they've left [ALL_PACK_KEYS] and [sweepOrphans] (which only sees
+     *  current keys via [installedPacks]) can't reach them; their catalog entries are
+     *  also deleted, so [OcrPackModelHelper.isInstalled] can't detect them either.
+     *  [OcrPackModelHelper.delete] works purely by path, so reclaim names them. */
+    private val RETIRED_OCR_PACKS = setOf("paddle-rec-cjk", "paddle-rec-latin")
+
+    /** One-shot reclaim of [RETIRED_OCR_PACKS] left on disk by a prior version — here,
+     *  the PP-OCRv6 unified-recognizer migration that retired the per-script cjk/latin
+     *  recognizers. Same launch-quiescence + not-loaded contract as [sweepOrphans];
+     *  gated on [replacementKey] being installed so a migrating language is never
+     *  stranded on the ML Kit floor between the delete and the unified pack's on-demand
+     *  refetch ([downloadDefaultForSource]). No-op once the old packs are gone — safe
+     *  every launch; remove a few releases out, once the installed base has migrated. */
+    fun reclaimRetiredPacks(
+        ctx: Context,
+        replacementKey: String = "paddle-rec-unified",
+        isLoaded: (packKey: String) -> Boolean = { MeikiBridge.isLoaded(it) || PaddleOcrBridge.isLoaded(it) },
+    ) {
+        if (!OcrPackModelHelper(replacementKey).isInstalled(ctx)) return
+        for (key in RETIRED_OCR_PACKS) {
+            if (!isLoaded(key)) helper(key).delete(ctx)
+        }
+    }
+
+    /** May the Settings OCR trash be offered on [row] while [selected] is the
+     *  current source language's resolved backend? False whenever the two share
+     *  a pack: since the Paddle speed tiers, a language's own backends CAN
+     *  reference the same pack (accurate + fast over one recognizer), so
+     *  deleting an unselected sibling row would pull the files out from under
+     *  the backend a live capture resolves. Pure (JVM-testable); the caller
+     *  layers on the ctx-dependent checks (downloaded, built-in). */
+    fun canOfferOcrDelete(row: OcrBackend, selected: OcrBackend?): Boolean =
+        selected == null || row.packKeys.none { it in selected.packKeys }
+
+    /** Delete a SINGLE OCR pack interactively (the Settings OCR trash), outside
+     *  the launch-time [sweepOrphans] pass. Safe off-quiescence ONLY when
+     *  [packKey] is not resolved by the current source language's selection —
+     *  a live capture only ever resolves the *selected* backend. The trash is
+     *  gated by [canOfferOcrDelete] (since the Paddle speed tiers, a language's
+     *  own backends can SHARE a pack, so unselected-row ≠ unused pack), and this
+     *  method re-checks the same invariant as defense in depth: refused deletes
+     *  return false. Any session still cached for a deletable [packKey] is a
+     *  stale one from a prior selection or a non-source language: close just it
+     *  — so we never unlink files under a live mmap — then delete, leaving
+     *  every other language's live session intact.
+     *
+     *  Other languages that selected [packKey] keep their choice; the missing
+     *  pack re-downloads through the normal source-switch path
+     *  (downloadDefaultForSource) the next time one becomes the source.
+     *
+     *  CAMERA- and IMPORT-scoped selections naming [packKey]'s backend are
+     *  CLEARED here (reverting to inherit-global) instead of kept: those
+     *  tools have no source-switch re-download choke point, and a
+     *  shippable-but-deleted pack still RESOLVES as selected
+     *  (availableBackends gates on shippable, not installed) — a kept token
+     *  would leave the tool's gear naming an engine while recognition
+     *  silently runs the ML Kit floor. Done at this choke point, not in the
+     *  settings UI, so every delete caller gets the cleanup; the consent
+     *  prompt lives with the caller. */
+    fun deleteOcrPack(ctx: Context, packKey: String): Boolean {
+        val prefs = Prefs(ctx)
+        val current = prefs.sourceLangId
+        if (selectedBackend(ctx, current)?.packKeys?.contains(packKey) == true) {
+            Log.w(TAG, "refusing to delete '$packKey': the current source " +
+                "(${current.code})'s selected backend resolves it")
+            return false
+        }
+        fun sweepScope(
+            label: String,
+            token: (SourceLangId) -> String?,
+            clear: (SourceLangId) -> Unit,
+        ) {
+            for (id in SourceLangId.entries) {
+                val t = token(id) ?: continue
+                val named = SourceLanguageProfiles[id].ocrBackends
+                    .firstOrNull { it.selectionToken == t } ?: continue
+                if (packKey in named.packKeys) {
+                    Log.i(TAG, "delete '$packKey': clearing $label OCR selection for ${id.code}")
+                    clear(id)
+                }
+            }
+        }
+        sweepScope("camera", prefs::cameraOcrBackendToken, prefs::clearCameraOcrBackendToken)
+        sweepScope("import", prefs::importOcrBackendToken, prefs::clearImportOcrBackendToken)
+        MeikiBridge.close(packKey)
+        PaddleOcrBridge.close(packKey)
+        helper(packKey).delete(ctx)
+        return true
+    }
+
+    /** Quiescent teardown: close every bridge session + engine cache. Caller must
+     *  guarantee no in-flight OCR (wired from OcrManager.releaseAll at TRIM_MEMORY). */
+    fun closeAll() {
+        MeikiBridge.close(); PaddleOcrBridge.close()
+    }
+}
+
+/** Coarse selection tag persisted in Prefs; unique within a language's
+ *  `ocrBackends`. Meiki / ML Kit appear at most once per language; PaddleOCR
+ *  appears as two speed tiers — "paddle" is the accurate tier AND the legacy
+ *  token, so selections stored before tiers existed keep meaning exactly what
+ *  they meant. */
+val OcrBackend.selectionToken: String
+    get() = when (this) {
+        is OcrBackend.Meiki -> "meiki"
+        is OcrBackend.Paddle -> if (fast) "paddle-fast" else "paddle"
+        else -> "mlkit"
+    }
+
+/** Human-facing engine name for the OCR pickers. Engine names are proper nouns
+ *  (never translated); the PaddleOCR speed-tier qualifier is a localizable
+ *  resource, hence the [ctx]. */
+fun OcrBackend.ocrLabel(ctx: Context): String = when (this) {
+    is OcrBackend.Meiki -> "Meiki"
+    is OcrBackend.Paddle -> ctx.getString(
+        if (fast) R.string.ocr_label_paddle_fast else R.string.ocr_label_paddle_accurate,
+    )
+    is OcrBackend.Tesseract -> "Tesseract"
+    else -> "ML Kit"
+}
+
+/** True iff every pack [this] needs is on disk, so the engine can actually run.
+ *  ML Kit (no packs) and APK-bundled recognizers read as downloaded
+ *  ([OcrPackModelHelper.isInstalled] returns true for both). Shared by the
+ *  Settings OCR picker and the in-result OCR switcher so the "downloaded"
+ *  predicate can't drift between them. */
+fun OcrBackend.isDownloaded(ctx: Context): Boolean =
+    packKeys.all { OcrPackModelHelper(it).isInstalled(ctx) }

@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Target (translation) section: header + card. Shared by the in-app results
+     page (fragment_translation_result.xml) and the over-game capture panel
+     (CaptureResultOverlay). merge-rooted so it inlines into a vertical
+     LinearLayout parent without adding a wrapper; every id is preserved so the
+     fragment's findViewById keeps working unchanged. -->
+<merge xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:parentTag="android.widget.LinearLayout">
+
+    <!-- The header: the language name, then the section's actions (the
+         "Show on screen" pill, Add to Anki, Text size, and the pinned eye),
+         which SectionHeaderRow builds from TranslationSectionBinder's
+         HeaderActions and folds behind a ⋯ menu when they don't fit. Text
+         size lives in THIS header, not the source's, because this row is the
+         topmost one in both stacked layouts: re-fitting the text never moves
+         it, so the size popover stays glued to its anchor (the button, or ⋯)
+         while the user drags. It must stay this merge's FIRST child: the
+         capture panel re-pads it through getChildAt(0). -->
+    <com.playtranslate.ui.SectionHeaderRow
+        android:id="@+id/targetHeaderRow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingTop="@dimen/pt_group_gap"
+        android:paddingBottom="8dp"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp">
+
+        <!-- Tappable area hugs the label text (wrap_content) but fills the row's full
+             height (match_parent) so it matches the inline action buttons. One line:
+             the row cuts it with an ellipsis only when the name alone leaves no room
+             for ⋯ and the eye, so the header's height never changes. -->
+        <TextView
+            android:id="@+id/labelTranslation"
+            style="@style/Text.PT.GroupHeader"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:background="?attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true"
+            android:contentDescription="@string/cd_change_target_language"
+            android:text="@string/section_translation" />
+
+    </com.playtranslate.ui.SectionHeaderRow>
+
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/cardTranslation"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        app:cardBackgroundColor="?attr/ptCard"
+        app:cardCornerRadius="@dimen/pt_radius"
+        app:cardElevation="0dp"
+        app:strokeColor="?attr/ptDivider"
+        app:strokeWidth="1dp">
+
+        <LinearLayout
+            android:id="@+id/translationContent"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="@dimen/pt_row_h_padding"
+            android:paddingVertical="@dimen/pt_row_v_padding">
+
+            <TextView
+                android:id="@+id/tvTranslation"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="24sp"
+                android:textColor="?attr/ptText"
+                android:lineSpacingMultiplier="1" />
+
+            <TextView
+                android:id="@+id/tvTranslationNote"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:textColor="?attr/ptTextHint"
+                android:textSize="11sp"
+                android:visibility="gone" />
+
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+
+</merge>

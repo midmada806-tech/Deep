@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Reusable hotkey row: title + key combo chips on left, MaterialSwitch
+     on right. android:background carries the ripple state-list
+     (transparent at rest, ripple animation when pressed), not a static
+     fill, so the lint Overdraw warning is structurally wrong here. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:minHeight="66dp"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingHorizontal="@dimen/pt_row_h_padding"
+    android:paddingVertical="9dp"
+    android:background="?attr/selectableItemBackground"
+    android:clickable="true"
+    android:focusable="true"
+    tools:ignore="Overdraw">
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:layout_marginEnd="16dp">
+
+        <TextView
+            android:id="@+id/tvRowTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            style="@style/Text.PT.RowTitle" />
+
+        <!-- Key combo chips are added here dynamically -->
+        <LinearLayout
+            android:id="@+id/llKeyCaps"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="4dp"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/tvRowSubtitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:visibility="gone"
+            style="@style/Text.PT.RowSubtitle" />
+    </LinearLayout>
+
+    <!-- saveEnabled="false": shares switchRowToggle with the other switch
+         rows on the same screen; see settings_row_switch.xml. -->
+    <com.google.android.material.materialswitch.MaterialSwitch
+        android:id="@+id/switchRowToggle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:clickable="false"
+        android:focusable="false"
+        android:saveEnabled="false"
+        app:materialThemeOverlay="@style/Widget.PlayTranslate.MaterialSwitch" />
+
+</LinearLayout>

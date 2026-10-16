@@ -1,0 +1,1566 @@
+package com.playtranslate.ui
+
+import android.app.Activity
+import android.content.Context
+import android.content.Intent
+import android.content.res.ColorStateList
+import com.playtranslate.camera.CameraActivity
+import com.playtranslate.capturableDisplays
+import com.playtranslate.capture.CaptureBackendResolver
+import com.playtranslate.capture.CaptureLifecycle
+import com.playtranslate.capture.GameAudioGate
+import android.graphics.Bitmap
+import android.graphics.Color
+import android.graphics.drawable.Drawable
+import android.graphics.drawable.GradientDrawable
+import android.net.Uri
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.provider.Settings
+import android.text.Editable
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.TextWatcher
+import android.text.style.ForegroundColorSpan
+import android.view.Gravity
+import android.view.KeyEvent
+import android.view.View
+import android.view.ViewGroup
+import android.widget.EditText
+import android.widget.FrameLayout
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.ProgressBar
+import android.widget.TextView
+import android.widget.Toast
+import androidx.annotation.AttrRes
+import androidx.annotation.DrawableRes
+import androidx.annotation.StringRes
+import androidx.appcompat.app.AlertDialog
+import androidx.core.widget.ImageViewCompat
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.card.MaterialCardView
+import com.google.android.material.materialswitch.MaterialSwitch
+import com.playtranslate.BuildConfig
+import com.playtranslate.CaptureService
+import com.playtranslate.OcrManager
+import com.playtranslate.ocr.core.OcrBox
+import com.playtranslate.OverlayMode
+import com.playtranslate.PlayTranslateAccessibilityService
+import com.playtranslate.PlayTranslateTileService
+import com.playtranslate.IconAction
+import com.playtranslate.Prefs
+import com.playtranslate.R
+import com.playtranslate.UpdateChecker
+import com.playtranslate.diagnostics.BugReport
+import com.playtranslate.language.HintTextKind
+import com.playtranslate.language.SourceLanguageProfiles
+import com.playtranslate.blendColors
+import com.playtranslate.themeColor
+import com.playtranslate.translation.BackendId
+import com.playtranslate.translation.BackendStatus
+import com.playtranslate.translation.Cooldownable
+import com.playtranslate.translation.BergamotBackend
+import com.playtranslate.translation.MlKitBackend
+import com.playtranslate.translation.StarRating
+import com.playtranslate.translation.Tone
+import com.playtranslate.translation.TranslationBackend
+import com.playtranslate.translation.TranslationBackendRegistry
+import com.playtranslate.translation.llm.OnDeviceLlmBackend
+import com.playtranslate.translation.llm.OnDeviceLlmDownloader
+import com.playtranslate.translation.llm.humanSize
+import com.playtranslate.language.LanguagePackStore
+import com.playtranslate.language.OcrBackend
+import com.playtranslate.ocr.registry.OcrModelManager
+import com.playtranslate.ocr.registry.OcrPackModelHelper
+import com.playtranslate.ocr.registry.ocrLabel
+import com.playtranslate.ocr.registry.selectionToken
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import androidx.core.view.isVisible
+import androidx.core.net.toUri
+import androidx.core.view.isGone
+
+/** Which accessibility-gated Settings action raised the "accessibility
+ *  required" alert — selects the alert's explanatory copy. */
+enum class AccessibilityRequirement { MULTI_DISPLAY, HOTKEY, ENHANCED_AUTO_TRANSLATE }
+
+/** What a tap on the TTS hub cell resolves to. `null` (the
+ *  [RootSettingsViewModel.TtsCell.Loading] case) means non-interactive: the
+ *  picker-vs-setup choice isn't known until engine availability resolves, so a
+ *  tap in the initial bind window must not open the (empty) voice picker on a
+ *  device with no usable engine. */
+internal enum class TtsTap { OPEN_PICKER, OPEN_SETUP }
+
+internal fun ttsTapFor(state: RootSettingsViewModel.TtsCell): TtsTap? = when (state) {
+    RootSettingsViewModel.TtsCell.Loading -> null
+    is RootSettingsViewModel.TtsCell.Available -> TtsTap.OPEN_PICKER
+    RootSettingsViewModel.TtsCell.NoEngine -> TtsTap.OPEN_SETUP
+}
+
+/** A warning-triangle icon + [label], the whole run in `ptWarning` — the
+ *  recoverable-state subtitle treatment (hub cell and per-row). */
+internal fun warningSummary(ctx: Context, label: String): CharSequence {
+    val sb = SpannableStringBuilder()
+    appendInlineIcon(ctx, sb, R.drawable.ic_warning_triangle, R.attr.ptWarning)
+    sb.append(" ").append(label)
+    sb.setSpan(
+        ForegroundColorSpan(ctx.themeColor(R.attr.ptWarning)),
+        0, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+    )
+    return sb
+}
+
+/**
+ * Wires every settings row in dialog_settings.xml to prefs / callbacks.
+ *
+ * Extracted from SettingsBottomSheet so the fragment only handles lifecycle
+ * while this class owns all the view ↔ pref binding.
+ */
+class SettingsRenderer(
+    private val root: View,
+    private val prefs: Prefs,
+    private val ctx: Context,
+    private val lifecycleScope: CoroutineScope,
+    private val callbacks: Callbacks,
+) {
+
+    interface Callbacks {
+        fun onClose()
+        /** Tap on the Appearance CONFIGURE cell — open the theme/accent
+         *  sub-page ([AppearanceSettingsActivity]). */
+        fun openAppearanceSettings()
+        /** Tap on the Hotkeys CONFIGURE cell — open [HotkeysSettingsActivity]. */
+        fun openHotkeysSettings()
+        /** Tap on the "On the floating icon" footer — open the gesture
+         *  picker ([IconGesturesSettingsActivity]). */
+        fun openIconGesturesSettings()
+        /** Tap on the Capture & overlay CONFIGURE cell — open [CaptureOverlaySettingsActivity]. */
+        fun openCaptureOverlaySettings()
+        /** Tap on the Yomitan CONFIGURE cell — open [YomitanSettingsActivity]. */
+        fun openYomitanSettings()
+        /** Tap on the Translation services CONFIGURE cell — open [TranslationServicesActivity]. */
+        fun openTranslationServicesSettings()
+        fun onSourceLangChanged()
+        fun onScreenModeChanged()
+        fun requestAnkiPermission()
+        /** Tap on the Anki CONFIGURE cell when AnkiDroid is installed + granted
+         *  — open [AnkiSettingsActivity]. */
+        fun openAnkiSettings()
+        fun openLanguageSetup(mode: String)
+        /** Tap on the TTS "Voice" cell — open the per-language voice picker. */
+        fun openTtsVoicePicker()
+        /** Tap on the TTS no-engine cell — show the "No Text-to-Speech" alert. */
+        fun openTtsSetup()
+
+        /** Show an OverlayAlert explaining that [requirement] needs the
+         *  accessibility service enabled. The accent button opens
+         *  Accessibility Settings; the cancel button just dismisses. */
+        fun showAccessibilityRequiredAlert(requirement: AccessibilityRequirement)
+
+        /** MediaProjection backend: prompt for the screen-record consent and,
+         *  on grant, bring up the floating game-screen controls. Refreshes the
+         *  overlay-icon switch when the flow settles so it mirrors the result. */
+        fun requestMediaProjectionControls()
+
+        /** Audio repair ("Start recording audio"): restore whichever gates
+         *  the game-audio recorder is missing, in order — RECORD_AUDIO first
+         *  (revocable under a still-on pref: manual revoke, permission
+         *  auto-reset, backup restore), then the MediaProjection consent it
+         *  rides on. The implementer must cover BOTH gates because the row's
+         *  repair state is keyed on both (audioArmed) — a consent-only
+         *  action would be a dead-end CTA when the mic is the missing piece.
+         *  Refreshes the top section when the flow settles so the row flips
+         *  to its armed state. */
+        fun requestAudioCaptureConsent()
+
+        /** Tap on the audio row in its FAILED state ("Audio recording
+         *  failed": gates pass but the recorder could not start, or its
+         *  reader died and the automatic restart did not take). Implementer
+         *  re-runs the recorder's reconcile — a user push-point, which
+         *  resets the automatic-restart budget — and refreshes the top
+         *  section so the row shows the outcome. */
+        fun retryGameAudioRecording()
+
+        /** Tap on the "Update language packs" row in the Language section.
+         *  Implementer instantiates [com.playtranslate.language.PackUpgradeOrchestrator]
+         *  and calls `upgradeAll(stalePacks)`. On completion, calls
+         *  [SettingsRenderer.refreshLanguageSection] so the cell hides
+         *  (since `staleInstalledPacks()` is now empty). Use the **Activity's**
+         *  lifecycleScope for the orchestrator coroutine — NOT the Fragment's
+         *  view lifecycle scope, which would cancel the in-flight download
+         *  while the OverlayProgress dialog (attached to the Activity's
+         *  decorView) keeps spinning. */
+        fun onUpdateLanguagePacksTapped(
+            stalePacks: List<com.playtranslate.language.StalePack>
+        )
+
+        /** Tap on the "Download offline models" row. Implementer runs
+         *  [com.playtranslate.language.primeActivePair] for the active pair on the
+         *  Activity's lifecycleScope behind an OverlayProgress, then calls
+         *  [SettingsRenderer.refreshLanguageSection] so the cell hides once ready. */
+        fun onDownloadOfflineModelsTapped()
+
+        /** Tap on the "Check for updates" row. Implementer runs
+         *  [com.playtranslate.UpdateChecker.checkNow] on the **Activity's**
+         *  lifecycleScope (an update the user accepts downloads well past this
+         *  sheet's lifetime) and shows the outcome: the update prompt, the
+         *  "No update found" alert, or the check-failed alert.
+         *
+         *  [onFinished] must be invoked on the main thread once the network
+         *  phase settles — on every path, including early returns — because it
+         *  is what clears the row's spinner and makes the row tappable again.
+         *  Call it BEFORE presenting the outcome: the alert is the answer, so
+         *  the row should already be back at rest behind it. */
+        fun onCheckForUpdatesTapped(onFinished: () -> Unit)
+    }
+
+    // ── View references for refresh ─────────────────────────────────────
+
+    private val rowSourceLang: View = root.findViewById(R.id.rowSourceLang)
+    private val rowTargetLang: View = root.findViewById(R.id.rowTargetLang)
+    private val cardUpdateLanguagePacks: MaterialCardView = root.findViewById(R.id.cardUpdateLanguagePacks)
+    private val rowUpdateLanguagePacks: View = root.findViewById(R.id.rowUpdateLanguagePacks)
+    private val cardOfflineModels: MaterialCardView = root.findViewById(R.id.cardOfflineModels)
+    private val rowOfflineModels: View = root.findViewById(R.id.rowOfflineModels)
+
+    /** In-flight offline-translation readiness check (Concept B). Cancelled +
+     *  restarted on each setupLanguageSection so a refresh can't race a stale
+     *  result onto the card. */
+    private var offlineReadinessJob: Job? = null
+
+    private val rowOverlayIcon: View = root.findViewById(R.id.rowOverlayIcon)
+    private val overlayIconPreviewSlot: FrameLayout = rowOverlayIcon.findViewById(R.id.overlayIconPreviewSlot)
+    private var overlayIconPreview: FloatingOverlayIcon? = null
+    // "On the floating icon" cell — text + icon tints are driven by the
+    // capture lifecycle. Active: title = ptTextMuted (GroupHeader default),
+    // gesture word + icon = ptAccent, bound action = ptText. Disabled:
+    // everything shifts down to ptTextHint so the whole cell reads as a
+    // single recessed group.
+    private val tvOverlayIconTitle: TextView = rowOverlayIcon.findViewById(R.id.tvRowTitle)
+    private val ivOverlayIconChevron: ImageView = rowOverlayIcon.findViewById(R.id.ivOverlayIconChevron)
+
+    /** One line of the cell: gesture icon, gesture word, bound action title. */
+    private class GestureLine(val icon: ImageView, val tvGesture: TextView, val tvAction: TextView)
+
+    private fun gestureLine(iconId: Int, gestureId: Int, actionId: Int) = GestureLine(
+        rowOverlayIcon.findViewById(iconId),
+        rowOverlayIcon.findViewById(gestureId),
+        rowOverlayIcon.findViewById(actionId),
+    )
+
+    private val lineDrag = gestureLine(R.id.iconGestureDrag, R.id.tvGestureDrag, R.id.tvActionDrag)
+    private val lineHold = gestureLine(R.id.iconGestureHold, R.id.tvGestureHold, R.id.tvActionHold)
+    private val lineTap = gestureLine(R.id.iconGestureTap, R.id.tvGestureTap, R.id.tvActionTap)
+
+    private val btnCaptureLifecycle: ShimmerButton = root.findViewById(R.id.btnCaptureLifecycle)
+
+    // ── Power status cell (top row of the unified top-section card) ──────
+    // The cell itself is the tap target; the inner switch is non-clickable
+    // and follows the row tap. All per-state styling — icon block bg + stroke,
+    // glyph tint, dot + halo, state-label text + colour, title + subtitle
+    // copy, switch checked-ness — is applied in stylePowerCard(). The
+    // divider sits between the power cell and the Game-screen-controls row
+    // and is hidden in lock-step with the cell (a11y dual-screen has no
+    // activate control and the cell is GONE).
+    private val powerCard: ShimmerLinearLayout = root.findViewById(R.id.powerCard)
+    private val powerIconBlock: FrameLayout = root.findViewById(R.id.powerIconBlock)
+    private val powerIconGlyph: ImageView = root.findViewById(R.id.powerIconGlyph)
+    private val powerStateHalo: View = root.findViewById(R.id.powerStateHalo)
+    private val powerStateDot: View = root.findViewById(R.id.powerStateDot)
+    private val powerStateLabel: TextView = root.findViewById(R.id.powerStateLabel)
+    private val powerTitle: TextView = root.findViewById(R.id.powerTitle)
+    private val powerSubtitle: TextView = root.findViewById(R.id.powerSubtitle)
+    private val powerSwitch: MaterialSwitch = root.findViewById(R.id.powerSwitch)
+
+    // Show on-screen controls — the floating-icon visibility toggle that takes
+    // the power cell's slot on the accessibility backend in dual-screen.
+    // Exactly one of {powerCard, rowGameScreenControls} is visible at a time.
+    private val rowGameScreenControls: View = root.findViewById(R.id.rowGameScreenControls)
+    private val switchGameScreenControls: MaterialSwitch =
+        root.findViewById(R.id.switchGameScreenControls)
+
+    // Audio recording row — visible while game-audio recording is enabled and
+    // the session is on. Title + trailing record glyph track the state
+    // (styleAudioRecordingRow) and the row tap's meaning follows it.
+    private val rowAudioRecording: View = root.findViewById(R.id.rowAudioRecording)
+    private val dividerAudioRecording: View = root.findViewById(R.id.dividerAudioRecording)
+    private val ivAudioRecordingGlyph: ImageView = root.findViewById(R.id.ivAudioRecordingGlyph)
+    private val tvAudioRecordingTitle: TextView = root.findViewById(R.id.tvAudioRecordingTitle)
+
+    // Whole toolbar (title + Turn On/Off button) — rests hidden and fades in
+    // as the user scrolls past the power card; see updateToolbarCrossfade.
+    private val settingsToolbar: View = root.findViewById(R.id.settingsToolbar)
+
+    private val rowDiscord: View = root.findViewById(R.id.rowDiscord)
+    private val rowDonate: View = root.findViewById(R.id.rowDonate)
+    private val rowCheckUpdates: View = root.findViewById(R.id.rowCheckUpdates)
+
+    /** True from the "Check for updates" tap until the host reports the check
+     *  settled. Drives the cell's busy rendering AND is the single-flight
+     *  guard — a second tap while a check is in flight must not start another. */
+    private var updateCheckInFlight = false
+    private val settingsScrollView: androidx.core.widget.NestedScrollView = root.findViewById(R.id.settingsScrollView)
+
+    private val llDebugSection: LinearLayout = root.findViewById(R.id.llDebugSection)
+
+    private var deckEntries: List<Map.Entry<Long, String>> = emptyList()
+
+    // ── Public entry point ───────────────────────────────────────────────
+
+    fun bind() {
+        setupGroupHeaders()
+        setupCaptureLifecycleButton()
+        setupGameScreenControlsRow()
+        setupLanguageSection()
+        setupOnScreenControls()
+        setupConfigureSection()
+        setupToolsSection()
+        setupSupportSection()
+        setupDebugSection()
+    }
+
+    // ── Group headers ────────────────────────────────────────────────────
+
+    private fun setupGroupHeaders() {
+        // LANGUAGE has no header — the two-cell button row sits at the top
+        // of the settings sheet (above the power section, no headerLanguage
+        // in dialog_settings.xml).
+        // ON-SCREEN CONTROLS has no header — its card sits directly under
+        // the power card as part of the top section (no headerOnScreen in
+        // dialog_settings.xml).
+        setGroupHeader(R.id.headerSupport, ctx.getString(R.string.settings_header_support))
+        setGroupHeader(R.id.headerDebug, ctx.getString(R.string.settings_header_debug))
+    }
+
+    private fun setGroupHeader(id: Int, title: String, badge: String? = null) {
+        val header = root.findViewById<View>(id) ?: return
+        header.findViewById<TextView>(R.id.tvGroupTitle)?.text = title
+        val badgeView = header.findViewById<TextView>(R.id.tvGroupBadge)
+        if (badge != null) {
+            badgeView?.text = badge
+            badgeView?.visibility = View.VISIBLE
+        } else {
+            badgeView?.visibility = View.GONE
+        }
+    }
+
+    // ── Language section ──────────────────────────────────────────────────
+
+    private fun setupLanguageSection() {
+        // Source/target names are VM-owned and applied in render(); this wires
+        // only the static click targets + the stale-pack update card (the card
+        // is live disk state, so it stays renderer-owned, refreshed on resume).
+        rowSourceLang.setOnClickListener {
+            callbacks.openLanguageSetup(LanguageSetupActivity.MODE_SOURCE)
+        }
+        rowTargetLang.setOnClickListener {
+            callbacks.openLanguageSetup(LanguageSetupActivity.MODE_TARGET)
+        }
+
+        // "Update language packs" cell — its OWN MaterialCardView so the
+        // warning tint (background fill + stroke) doesn't bleed onto the
+        // Source/Target rows. Visible iff there are stale packs on disk
+        // (additive or force, mixed labeling). Subtitle is the same
+        // multi-line list the launch-time OverlayAlert uses.
+        val activity = root.context as? android.app.Activity
+        val stalePacks = if (activity != null) {
+            com.playtranslate.language.LanguagePackStore.staleInstalledPacks(activity)
+        } else {
+            emptyList()
+        }
+        if (stalePacks.isEmpty() || activity == null) {
+            cardUpdateLanguagePacks.isGone = true
+        } else {
+            cardUpdateLanguagePacks.isVisible = true
+            rowUpdateLanguagePacks.findViewById<TextView>(R.id.tvRowTitle).text =
+                root.context.getString(R.string.lang_section_update_packs_title)
+            rowUpdateLanguagePacks.findViewById<TextView>(R.id.tvRowSubtitle).text =
+                com.playtranslate.language.PackUpgradeOrchestrator
+                    .describeForAlert(activity, stalePacks)
+            rowUpdateLanguagePacks.setOnClickListener {
+                callbacks.onUpdateLanguagePacksTapped(stalePacks)
+            }
+            applyWarningTint(cardUpdateLanguagePacks)
+        }
+
+        // ── Download offline models (Concept B) ──────────────────────────────
+        // The readiness check is a suspend GMS round-trip (unlike the synchronous
+        // stale-pack scan), so the card starts hidden and reveals only if the
+        // active pair lacks offline translation. Cancel any prior in-flight check
+        // so a refresh can't race an earlier result onto the card.
+        offlineReadinessJob?.cancel()
+        cardOfflineModels.isGone = true
+        if (activity != null) {
+            val sourceId = prefs.sourceLangId
+            val targetLang = prefs.targetLang
+            offlineReadinessJob = lifecycleScope.launch {
+                val ready = withContext(Dispatchers.IO) {
+                    com.playtranslate.translation.OfflineModelReclaimer
+                        .isOfflineTranslationReady(sourceId, targetLang)
+                }
+                if (!ready) {
+                    val targetName = com.playtranslate.language.ChineseScriptVariant
+                        .targetDisplayName(targetLang, prefs.targetChineseVariant)
+                    cardOfflineModels.isVisible = true
+                    rowOfflineModels.findViewById<TextView>(R.id.tvRowTitle).text =
+                        ctx.getString(R.string.lang_section_offline_models_title)
+                    rowOfflineModels.findViewById<TextView>(R.id.tvRowSubtitle).text =
+                        ctx.getString(
+                            R.string.lang_section_offline_models_subtitle,
+                            sourceId.displayName(),
+                            targetName,
+                        )
+                    rowOfflineModels.setOnClickListener {
+                        callbacks.onDownloadOfflineModelsTapped()
+                    }
+                    applyWarningTint(cardOfflineModels)
+                }
+            }
+        }
+    }
+
+    /** Tint a Language-section warning card (Update packs / Download offline
+     *  models) with the attention color — blend `blendColors(warning, baseCard,
+     *  0.20f)` with a full-strength stroke. One recipe so both recoverable-state
+     *  warnings carry the same visual weight. */
+    private fun applyWarningTint(card: MaterialCardView) {
+        val baseCard = ctx.themeColor(R.attr.ptCard)
+        val warning = ctx.themeColor(R.attr.ptWarning)
+        card.setCardBackgroundColor(blendColors(warning, baseCard, 0.20f))
+        card.strokeColor = warning
+    }
+
+    /** Public shim for the Settings cell callback to refresh the Language
+     *  section after the upgrade orchestrator completes. The cell hides when
+     *  staleInstalledPacks() is now empty. */
+    fun refreshLanguageSection() {
+        setupLanguageSection()
+    }
+
+    // ── On-screen controls ───────────────────────────────────────────────
+
+    private fun setupOnScreenControls() {
+        // "On the floating icon" — the icon's gestures and what each is bound
+        // to; the row opens the picker page. No toggle: the floating icon's
+        // visibility is driven by the capture lifecycle (and the Quick
+        // Settings tile via Prefs.showOverlayIcon). The bound action titles +
+        // the tints come from refreshCaptureLifecycleButton().
+        tvOverlayIconTitle.setText(R.string.settings_show_overlay_icon)
+        rowOverlayIcon.setOnClickListener { callbacks.openIconGesturesSettings() }
+        overlayIconPreviewSlot.isVisible = true
+        buildOverlayIconPreview()
+    }
+
+    /** Bind one gesture line: the icon + gesture word in [verbColor], the
+     *  bound [action]'s title on a source language whose reading hint is
+     *  [hint] in [baseColor]. */
+    private fun bindGestureLine(
+        line: GestureLine,
+        action: IconAction,
+        hint: HintTextKind,
+        verbColor: Int,
+        baseColor: Int,
+    ) {
+        line.icon.imageTintList = ColorStateList.valueOf(verbColor)
+        line.tvGesture.setTextColor(verbColor)
+        line.tvAction.setText(action.titleRes(hint))
+        line.tvAction.setTextColor(baseColor)
+    }
+
+
+    // ── Turn On / Turn Off PlayTranslate ───────────────────────────────────────
+
+    private fun setupCaptureLifecycleButton() {
+        val onClick = View.OnClickListener {
+            when {
+                // Before the active check: with a stale showOverlayIcon=true
+                // pref the stuck service still reads as active, and the
+                // deactivate branch would eat the tap AND clear the pref —
+                // forfeiting the auto-recovery where the icon returns by
+                // itself on rebind (onServiceConnected reconciles) once the
+                // user re-toggles the service. Repair first; the pref
+                // survives.
+                CaptureBackendResolver.active().requiresAccessibilityService &&
+                    a11yServiceStuck() -> showA11yStuckAlert()
+                CaptureLifecycle.isActive(ctx) -> {
+                    CaptureLifecycle.deactivate(ctx)
+                    refreshCaptureLifecycleButton()
+                }
+                !CaptureBackendResolver.active().requiresAccessibilityService ->
+                    // MediaProjection — the consent flow is Activity-scoped;
+                    // the callback refreshes the buttons once it settles.
+                    callbacks.requestMediaProjectionControls()
+                CaptureLifecycle.activateAccessibility(ctx) -> {
+                    refreshCaptureLifecycleButton()
+                }
+                else -> showA11yActivationBlockedAlert()
+            }
+        }
+        btnCaptureLifecycle.setOnClickListener(onClick)
+        powerCard.setOnClickListener(onClick)
+
+        // Title is the app name in every state — session state lives in the
+        // badge/LED/switch, capture-permission truth in the subtitle
+        // (stylePowerCard). A state-dependent title claimed a permission the
+        // sticky activation flag doesn't track.
+        powerTitle.setText(R.string.app_name)
+
+        // Audio recording row — one whole-row tap (the cell IS the button)
+        // whose meaning follows the rendered state (styleAudioRecordingRow):
+        // the repair state requests the MediaProjection consent the recorder
+        // rides on (it never prompts itself); the armed state taps through
+        // to Anki settings, where the feature switch — the real stop lever —
+        // lives. Recording itself starts and stops with the session.
+        rowAudioRecording.setOnClickListener {
+            when (audioRowState()) {
+                AudioRowState.DARK -> callbacks.requestAudioCaptureConsent()
+                AudioRowState.RECORDING -> callbacks.openAnkiSettings()
+                AudioRowState.FAILED -> callbacks.retryGameAudioRecording()
+            }
+        }
+
+        // The whole toolbar (title + Turn On/Off button together) fades in as
+        // the user scrolls past the power card. The card itself does not fade
+        // — it scrolls out of view naturally and the bar takes over as the
+        // sticky reminder.
+        settingsScrollView.setOnScrollChangeListener(
+            androidx.core.widget.NestedScrollView.OnScrollChangeListener { _, _, scrollY, _, _ ->
+                updateToolbarCrossfade(scrollY)
+            }
+        )
+        refreshCaptureLifecycleButton()
+    }
+
+    /** Wire the Game Screen Controls row — the floating-icon visibility
+     *  toggle that occupies the power cell's slot on the accessibility
+     *  backend in dual-screen, where capture itself is always on. Mirrors
+     *  the QS tile's accessibility on/off branch so the Settings toggle and
+     *  the tile stay in sync. [refreshCaptureLifecycleButton] owns the row's
+     *  visibility and the switch's checked state. */
+    private fun setupGameScreenControlsRow() {
+        rowGameScreenControls.setOnClickListener {
+            if (a11yServiceStuck()) {
+                // Same repair-first ordering as the power button: an off-tap
+                // in the stuck state would clear the pref and forfeit the
+                // auto-restore on rebind.
+                showA11yStuckAlert()
+            } else if (prefs.showOverlayIcon) {
+                // Off — the canonical "icon goes away" path (writes the pref,
+                // stops live mode, hides the icon, refreshes the tile), shared
+                // with the QS tile and CaptureLifecycle.deactivate.
+                PlayTranslateAccessibilityService.disable(
+                    ctx, "settings_game_screen_controls_off"
+                )
+            } else {
+                // On — bring the floating icon back, through the canonical
+                // activate so the pref write is honest: it only sticks when
+                // the bound service can actually host the icon, and the
+                // stuck / not-enabled states get their repair prompts
+                // instead of a silent no-op.
+                if (!CaptureLifecycle.activateAccessibility(ctx)) {
+                    showA11yActivationBlockedAlert()
+                }
+            }
+            refreshCaptureLifecycleButton()
+        }
+    }
+
+    /** Show / hide + style the top-slot capture controls against the current
+     *  [CaptureLifecycle] state:
+     *   - Power cell + nav-bar button — shown wherever there is a capture
+     *     lifecycle to start / stop.
+     *   - Game Screen Controls row — shown instead on the accessibility
+     *     backend in dual-screen, where "active" is always true and the
+     *     floating icon is the only thing left to toggle.
+     *
+     *  Also recolours the adjacent "On the floating icon" footer: while the
+     *  icon is hidden its title + gesture text + gesture icons all drop to
+     *  ptTextHint (the next-darker theme step below ptTextMuted) so the whole
+     *  cell reads as a single recessed group, and the docked-icon preview
+     *  drops to 50% alpha as a stronger "this is currently dark" cue.
+     */
+    fun refreshCaptureLifecycleButton() {
+        // Exactly one of {power cell, Game Screen Controls row} occupies the
+        // top slot. The power cell shows wherever there is a capture lifecycle
+        // to start / stop; the Game Screen Controls row takes over on the
+        // accessibility backend in dual-screen, where capture is always on.
+        val showPowerCell = CaptureLifecycle.hasActivateControl(ctx)
+        val powerVisibility = if (showPowerCell) View.VISIBLE else View.GONE
+        btnCaptureLifecycle.visibility = powerVisibility
+        powerCard.visibility = powerVisibility
+        rowGameScreenControls.visibility =
+            if (showPowerCell) View.GONE else View.VISIBLE
+        switchGameScreenControls.isChecked = prefs.showOverlayIcon
+        val active = CaptureLifecycle.isActive(ctx)
+        // Audio row — both backends (it sits under whichever of the power
+        // cell / controls row occupies the top slot). Visible while the
+        // feature + session are on; the trailing glyph tracks whether audio
+        // is armed (hint = dark, accent = recording) and the tap follows:
+        // consent request while dark (the recorder never prompts itself;
+        // same repair the floating menu's accent bar offers), Anki settings
+        // — the feature switch, i.e. the stop lever — while recording.
+        val showAudioRow = prefs.recordGameAudio && active
+        rowAudioRecording.isVisible = showAudioRow
+        dividerAudioRecording.isVisible = showAudioRow
+        if (showAudioRow) styleAudioRecordingRow(audioRowState())
+        // The floating-icon footer is lit when the icon is actually on the
+        // game screen, dim otherwise. That tracks `active` everywhere except
+        // a11y dual-screen, where capture is always active but the Game
+        // Screen Controls toggle gates the icon — there it tracks
+        // showOverlayIcon instead.
+        val iconLit = if (showPowerCell) active else prefs.showOverlayIcon
+        val titleColor = ctx.themeColor(
+            if (iconLit) R.attr.ptTextMuted else R.attr.ptTextHint
+        )
+        // Gesture line has two colour zones: the bound action title
+        // (baseColor) and the leading bold gesture word (verbColor). Lit
+        // accents the word + matching icon; dim flattens both into the same
+        // muted hint colour as the rest of the line.
+        val baseColor = ctx.themeColor(
+            if (iconLit) R.attr.ptText else R.attr.ptTextHint
+        )
+        val verbColor = ctx.themeColor(
+            if (iconLit) R.attr.ptAccent else R.attr.ptTextHint
+        )
+        tvOverlayIconTitle.setTextColor(titleColor)
+        ivOverlayIconChevron.imageTintList = ColorStateList.valueOf(titleColor)
+        // The bindings are re-read here rather than observed: the picker page
+        // is its own Activity, and so is the language picker (the source
+        // language's reading hint decides whether a swap binding applies and
+        // names it), so the sheet's resume, which already funnels into this
+        // refresh, is the catch-up point, the same contract as the rest of
+        // the lifecycle-driven cell. One case waits past it: on dual-screen a
+        // source language picked from the floating menu while this page stays
+        // resumed on the other display shows here at the next resume.
+        val bindings = prefs.iconGestureBindings()
+        bindGestureLine(lineDrag, bindings.drag, bindings.hint, verbColor, baseColor)
+        bindGestureLine(lineHold, bindings.hold, bindings.hint, verbColor, baseColor)
+        bindGestureLine(lineTap, bindings.tap, bindings.hint, verbColor, baseColor)
+        overlayIconPreviewSlot.alpha = if (iconLit) 1f else 0.5f
+        if (!showPowerCell) return
+        styleCaptureButton(btnCaptureLifecycle, active)
+        stylePowerCard(active)
+        // A refresh can land while the list is already scrolled — re-apply
+        // the toolbar fade-in for the current offset.
+        updateToolbarCrossfade(settingsScrollView.scrollY)
+    }
+
+    /** The audio row's three states. DARK: a permission gate is missing
+     *  ([GameAudioGate.armed] false) and the tap repairs it. RECORDING: armed
+     *  and the recorder is healthy ([GameAudioGate.recording]) — the only
+     *  state whose title is a status claim. FAILED: armed but the recorder
+     *  failed a wanted start ([com.playtranslate.capture.GameAudioRecorder
+     *  .startFailed]) — the tap retries. Same definitions the floating icon's
+     *  glyph and the menu's repair bar read. */
+    private enum class AudioRowState { DARK, RECORDING, FAILED }
+
+    private fun audioRowState(): AudioRowState {
+        val svc = CaptureService.instance
+        val controller = svc?.mediaProjectionControllerIfInitialized
+        return when {
+            !GameAudioGate.armed(ctx, controller) -> AudioRowState.DARK
+            GameAudioGate.recording(ctx, controller, svc?.gameAudioRecorderIfInitialized) ->
+                AudioRowState.RECORDING
+            else -> AudioRowState.FAILED
+        }
+    }
+
+    /** Render the audio row for [state]: the title tracks it — "Start
+     *  recording audio" (a verb; the tap IS the action) while dark,
+     *  "Recording audio" (a status claim, true only there) while recording,
+     *  "Audio recording failed" (the tap retries) while failed — and the
+     *  trailing record glyph is the state light: ptTextHint (the recessed
+     *  "this is currently dark" step), ptAccent, ptDanger. */
+    private fun styleAudioRecordingRow(state: AudioRowState) {
+        tvAudioRecordingTitle.setText(
+            when (state) {
+                AudioRowState.DARK -> R.string.audio_recording_row_start
+                AudioRowState.RECORDING -> R.string.audio_recording_row_active
+                AudioRowState.FAILED -> R.string.audio_recording_row_failed
+            }
+        )
+        ivAudioRecordingGlyph.imageTintList = ColorStateList.valueOf(
+            ctx.themeColor(
+                when (state) {
+                    AudioRowState.DARK -> R.attr.ptTextHint
+                    AudioRowState.RECORDING -> R.attr.ptAccent
+                    AudioRowState.FAILED -> R.attr.ptDanger
+                }
+            )
+        )
+    }
+
+    /** Filled-accent ("Turn On") / outlined ("Turn Off") styling for the
+     *  nav-bar ShimmerButton. The in-content power card uses a different
+     *  shape entirely — see [stylePowerCard]. */
+    private fun styleCaptureButton(btn: MaterialButton, active: Boolean) {
+        btn.setText(
+            if (active) R.string.capture_lifecycle_stop
+            else R.string.capture_lifecycle_start
+        )
+        if (active) {
+            // Outlined — the system is running.
+            btn.backgroundTintList = ColorStateList.valueOf(Color.TRANSPARENT)
+            btn.setTextColor(ctx.themeColor(R.attr.ptText))
+            btn.iconTint = ColorStateList.valueOf(ctx.themeColor(R.attr.ptText))
+            btn.strokeColor = ColorStateList.valueOf(ctx.themeColor(R.attr.ptTextMuted))
+            btn.strokeWidth = (1 * ctx.resources.displayMetrics.density).toInt()
+        } else {
+            // Filled accent — the prominent call to action.
+            btn.backgroundTintList = ColorStateList.valueOf(ctx.themeColor(R.attr.ptAccent))
+            btn.setTextColor(ctx.themeColor(R.attr.ptAccentOn))
+            btn.iconTint = ColorStateList.valueOf(ctx.themeColor(R.attr.ptAccentOn))
+            btn.strokeWidth = 0
+        }
+    }
+
+    /** Render the power status card for [active]:
+     *  - Icon block: ptElevated fill / ptOutline stroke / muted glyph (Off);
+     *    ptAccentTint fill / ptAccent stroke / accent glyph (On).
+     *  - State label: ALL-CAPS "OFF"/"ON" in ptTextMuted/ptAccent.
+     *  - LED dot: ptTextHint (Off) or ptAccent with a ptAccentTint halo (On).
+     *  - Subtitle: per-state copy from strings.xml.
+     *  - Switch: checked = active, driven by state (NOT optimistically — the
+     *    refresh chain runs after the lifecycle call settles).
+     */
+    private fun stylePowerCard(active: Boolean) {
+        val density = ctx.resources.displayMetrics.density
+
+        // Icon block: rounded 12dp rect with theme-tinted fill + stroke.
+        powerIconBlock.background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = 12f * density
+            setColor(ctx.themeColor(if (active) R.attr.ptAccentTint else R.attr.ptElevated))
+            setStroke(
+                (1 * density).toInt(),
+                ctx.themeColor(if (active) R.attr.ptAccent else R.attr.ptOutline),
+            )
+        }
+        powerIconGlyph.imageTintList = ColorStateList.valueOf(
+            ctx.themeColor(if (active) R.attr.ptAccent else R.attr.ptTextMuted)
+        )
+
+        // State label + LED dot + halo.
+        powerStateLabel.setText(
+            if (active) R.string.capture_lifecycle_state_on
+            else R.string.capture_lifecycle_state_off
+        )
+        powerStateLabel.setTextColor(
+            ctx.themeColor(if (active) R.attr.ptAccent else R.attr.ptTextMuted)
+        )
+        powerStateDot.background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(ctx.themeColor(if (active) R.attr.ptAccent else R.attr.ptTextHint))
+        }
+        if (active) {
+            powerStateHalo.background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(ctx.themeColor(R.attr.ptAccentTint))
+            }
+            powerStateHalo.isVisible = true
+        } else {
+            powerStateHalo.visibility = View.INVISIBLE
+        }
+
+        // Subtitle + switch state. The title stays the app name (set once in
+        // setup); the subtitle carries capture-PERMISSION truth, keyed on the
+        // permission rather than the switch — the two are deliberately
+        // decoupled (69a0b20f: a revoke must not read as the user turning
+        // PlayTranslate off):
+        //  - permission held → "Screen capture permitted". True in BOTH
+        //    switch states: an OFF cell over a warm grant honestly advertises
+        //    a prompt-free turn-on (a11y single-screen reaches this whenever
+        //    the service is enabled with the icon hidden).
+        //  - not held, session on → "on standby". The calm resting state on
+        //    API 34+, where the single-use token burns on every lock/revoke;
+        //    the next capture re-prompts, and audio repair has its own row.
+        //  - not held, session off → the "Allow screen capture" CTA.
+        // "Permission" resolves per backend: the accessibility service IS the
+        // capture permission there (so standby is unreachable — on implies
+        // enabled implies held); MediaProjection consent otherwise.
+        val consentHeld = if (CaptureBackendResolver.active().requiresAccessibilityService) {
+            PlayTranslateAccessibilityService.isEnabled(ctx)
+        } else {
+            CaptureService.instance?.mediaProjectionControllerIfInitialized?.hasConsent == true
+        }
+        powerSubtitle.setText(
+            when {
+                consentHeld -> R.string.capture_lifecycle_on_subtitle
+                active -> R.string.capture_lifecycle_standby_subtitle
+                else -> R.string.capture_lifecycle_off_subtitle
+            }
+        )
+        powerSwitch.isChecked = active
+    }
+
+    /** Fade the whole toolbar in as the user scrolls past the power card —
+     *  the bar (title + Turn On/Off button, no longer animated individually)
+     *  overlays the content and takes over as the sticky reminder. The card
+     *  itself is never faded — it just scrolls naturally under the bar. The
+     *  startOffset delays the fade-in until the user has scrolled past the
+     *  language picker and most of the power card. Fully hidden must also be
+     *  untouchable: an alpha-0 bar sits over live content and would swallow
+     *  its taps, hence INVISIBLE at t == 0. */
+    private fun updateToolbarCrossfade(scrollY: Int) {
+        val density = ctx.resources.displayMetrics.density
+        val startOffset = 100f * density
+        val distance = 72f * density
+        val t = ((scrollY - startOffset) / distance).coerceIn(0f, 1f)
+        settingsToolbar.alpha = t
+        settingsToolbar.visibility = if (t == 0f) View.INVISIBLE else View.VISIBLE
+    }
+
+    // ── Turn On/Off attention shimmer ─────────────────────────────────────
+    // A brief light sweep every few seconds draws the eye to the controls
+    // ONLY while capture is off. Once the user has enabled it, the accent
+    // tint and LED-on state already announce themselves on both surfaces
+    // (card + nav-bar button) and a sweep over them would be noise.
+
+    private val shimmerHandler = Handler(Looper.getMainLooper())
+    private val shimmerRunnable = object : Runnable {
+        override fun run() {
+            if (CaptureLifecycle.hasActivateControl(ctx) &&
+                !CaptureLifecycle.isActive(ctx)
+            ) {
+                btnCaptureLifecycle.shimmer()
+                powerCard.shimmer()
+            }
+            shimmerHandler.postDelayed(this, 5_000L)
+        }
+    }
+
+    /** Begin the periodic attention shimmer on the Turn On / Turn Off control. */
+    fun startCaptureButtonShimmer() {
+        shimmerHandler.removeCallbacks(shimmerRunnable)
+        shimmerHandler.postDelayed(shimmerRunnable, 5_000L)
+    }
+
+    /** Stop the periodic shimmer — call when the settings screen pauses. */
+    fun stopCaptureButtonShimmer() {
+        shimmerHandler.removeCallbacks(shimmerRunnable)
+    }
+
+    /** The accessibility-required dialog for the floating icon — shared by the
+     *  dual-screen toggle and the accessibility-backend Start path. */
+    private fun showOverlayIconA11yAlert() {
+        AlertDialog.Builder(ctx)
+            .setTitle(R.string.overlay_icon_a11y_required_title)
+            .setMessage(
+                AccessibilityHelp.withRestrictedSettingsStep(
+                    ctx, ctx.getString(R.string.overlay_icon_a11y_required_message),
+                ),
+            )
+            .setPositiveButton(R.string.btn_open_a11y_settings) { _, _ ->
+                ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    /** Enabled in system Settings but not bound to our process — the state
+     *  the system's accessibility page reports as "malfunctioning", left by
+     *  a kill whose restart was blocked (a force stop disables the service
+     *  outright on stock Android). Checked BEFORE the toggle branches
+     *  (power button, Game Screen Controls row) so a tap in that state
+     *  repairs instead of writing prefs against a service that cannot host
+     *  the icon. */
+    private fun a11yServiceStuck(): Boolean =
+        PlayTranslateAccessibilityService.isEnabled(ctx) &&
+            !PlayTranslateAccessibilityService.isConnected
+
+    /** Repair-prompt dispatch for a failed
+     *  [CaptureLifecycle.activateAccessibility]: enabled-but-unbound is the
+     *  state the system's accessibility page reports as "malfunctioning"
+     *  (Android does not rebind it until the user re-toggles the service)
+     *  and gets the stuck alert; not enabled at all gets the ordinary
+     *  enable prompt. */
+    private fun showA11yActivationBlockedAlert() {
+        if (PlayTranslateAccessibilityService.isEnabled(ctx)) showA11yStuckAlert()
+        else showOverlayIconA11yAlert()
+    }
+
+    /** No restricted-settings step here: a service that was enabled once
+     *  has already been allowed. */
+    private fun showA11yStuckAlert() {
+        var message = ctx.getString(R.string.a11y_stuck_message)
+        // The Keep-running page's two Xiaomi settings, suspected (not
+        // established) to be what stops the service there; the re-toggle
+        // fixes the symptom either way.
+        if (Build.MANUFACTURER.equals("Xiaomi", ignoreCase = true)) {
+            message += "\n\n" + ctx.getString(R.string.a11y_stuck_message_xiaomi)
+        }
+        AlertDialog.Builder(ctx)
+            .setTitle(R.string.a11y_stuck_title)
+            .setMessage(message)
+            .setPositiveButton(R.string.btn_open_a11y_settings) { _, _ ->
+                ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    /** Build (or rebuild) the floating-icon preview shown in the "On the
+     *  floating icon" cell, beside the gesture table. The icon view draws a
+     *  full notional 56dp circle around its centre, pushed off the screen
+     *  edge; docked on the slot's start edge (left, or right in RTL), with
+     *  the view's centre on that edge, so the narrow slot clips it to the
+     *  visible slice, arrow pointing at the gestures. Non-interactive — never
+     *  hosted as a window. */
+    private fun buildOverlayIconPreview() {
+        destroyOverlayIconPreview()
+        overlayIconPreviewSlot.removeAllViews()
+        val rtl = ctx.resources.configuration.layoutDirection == View.LAYOUT_DIRECTION_RTL
+        val edge = if (rtl) FloatingOverlayIcon.Edge.RIGHT else FloatingOverlayIcon.Edge.LEFT
+        val preview = FloatingOverlayIcon(ctx).apply {
+            isClickable = false
+            isFocusable = false
+            // No window params, so this only sets the edge the slice is drawn on.
+            setSlot(edge.ordinal, 0.5f)
+        }
+        overlayIconPreviewSlot.addView(
+            preview,
+            FrameLayout.LayoutParams(
+                preview.viewSizePx,
+                preview.viewSizePx,
+                Gravity.START or Gravity.CENTER_VERTICAL,
+            ).apply { marginStart = -preview.viewSizePx / 2 },
+        )
+        overlayIconPreview = preview
+    }
+
+    /** Recycle the preview's bitmap. Call before the renderer is discarded. */
+    fun destroyOverlayIconPreview() {
+        overlayIconPreview?.destroy()
+        overlayIconPreview = null
+    }
+
+    // ── Configure (drill-down to settings sub-pages) ─────────────────────
+
+    /** Wire the CONFIGURE cells, each of which opens a settings sub-page. */
+    private fun setupConfigureSection() {
+        setGroupHeader(R.id.headerConfigure, ctx.getString(R.string.settings_header_configure))
+        // The cells carry VM-driven status digests, so they're bound from
+        // render(); this only sets the static group header.
+    }
+
+    /** Bind the CONFIGURE hub cells (icon chip + title + status digest +
+     *  trailing) from the VM state. Re-run on each emission — the digests are
+     *  the dynamic part; icons / titles / clicks are constant. */
+    private fun bindConfigureCells(state: RootSettingsViewModel.UiState) {
+        bindHubCell(
+            root.findViewById(R.id.rowConfigCaptureOverlay),
+            HubCell(
+                iconRes = R.drawable.ic_capture,
+                title = ctx.getString(R.string.settings_cell_capture_overlay),
+                summary = state.captureSummary,
+                onClick = { callbacks.openCaptureOverlaySettings() },
+            ),
+        )
+        bindHubCell(
+            root.findViewById(R.id.rowConfigTranslationServices),
+            HubCell(
+                iconRes = R.drawable.ic_translate,
+                title = ctx.getString(R.string.settings_cell_translation_services),
+                summary = translationSummary(state),
+                onClick = { callbacks.openTranslationServicesSettings() },
+            ),
+        )
+        bindHubCell(
+            root.findViewById(R.id.rowConfigHotkeys),
+            HubCell(
+                iconRes = R.drawable.ic_game_controller,
+                title = ctx.getString(R.string.settings_cell_hotkeys),
+                summary = state.hotkeysSummary,
+                onClick = { callbacks.openHotkeysSettings() },
+            ),
+        )
+        bindAnkiCell(state.anki)
+        bindHubCell(
+            root.findViewById(R.id.rowConfigYomitan),
+            HubCell(
+                iconRes = R.drawable.ic_yomitan,
+                title = ctx.getString(R.string.settings_cell_yomitan),
+                // Outdated dictionaries (post-schema-bump) win the subtitle:
+                // a ptWarning triangle + count, spanned over the summary slot
+                // (the span outranks bindHubCell's ptTextMuted default).
+                summary = if (state.yomitanOutdatedCount > 0) {
+                    warningSummary(
+                        ctx,
+                        ctx.resources.getQuantityString(
+                            R.plurals.settings_yomitan_outdated_summary,
+                            state.yomitanOutdatedCount, state.yomitanOutdatedCount,
+                        ),
+                    )
+                } else {
+                    state.yomitanSummary
+                },
+                onClick = { callbacks.openYomitanSettings() },
+            ),
+        )
+        bindTtsCell(state.tts)
+        bindHubCell(
+            root.findViewById(R.id.rowConfigAppearance),
+            HubCell(
+                iconRes = R.drawable.ic_palette,
+                title = ctx.getString(R.string.settings_cell_appearance),
+                summary = state.appearanceSummary,
+                isLast = true,
+                onClick = { callbacks.openAppearanceSettings() },
+            ),
+        )
+    }
+
+    /** Anki cell: get-app (external) / grant (lock) / deck·card-type (chevron). */
+    private fun bindAnkiCell(state: RootSettingsViewModel.AnkiCell) {
+        val cell = when (state) {
+            RootSettingsViewModel.AnkiCell.GetApp -> HubCell(
+                iconRes = R.drawable.ic_card_stack,
+                title = ctx.getString(R.string.settings_cell_anki),
+                summary = ctx.getString(R.string.settings_anki_get_app_summary),
+                trailing = Trailing.EXTERNAL,
+                onClick = {
+                    ctx.startActivity(
+                        Intent(Intent.ACTION_VIEW, ctx.getString(R.string.anki_play_store_url).toUri()),
+                    )
+                },
+            )
+            RootSettingsViewModel.AnkiCell.GrantAccess -> HubCell(
+                iconRes = R.drawable.ic_card_stack,
+                title = ctx.getString(R.string.settings_cell_anki),
+                summary = ctx.getString(R.string.settings_anki_grant_summary),
+                trailing = Trailing.LOCK,
+                onClick = { callbacks.requestAnkiPermission() },
+            )
+            is RootSettingsViewModel.AnkiCell.Navigate -> HubCell(
+                iconRes = R.drawable.ic_card_stack,
+                title = ctx.getString(R.string.settings_cell_anki),
+                summary = ctx.getString(R.string.settings_anki_digest, state.deckName, state.cardName),
+                onClick = { callbacks.openAnkiSettings() },
+            )
+        }
+        bindHubCell(root.findViewById(R.id.rowConfigAnki), cell)
+    }
+
+    /** TTS cell (no sub-page): engine available → "engine · voice" + voice
+     *  picker; no engine → CTA + the "No Text-to-Speech" alert. */
+    private fun bindTtsCell(state: RootSettingsViewModel.TtsCell) {
+        val summary: CharSequence? = when (state) {
+            RootSettingsViewModel.TtsCell.Loading -> null
+            is RootSettingsViewModel.TtsCell.Available ->
+                state.engineLabel?.let { "$it · ${state.voiceLabel}" } ?: state.voiceLabel
+            RootSettingsViewModel.TtsCell.NoEngine -> ctx.getString(R.string.tts_no_engine_row_subtitle)
+        }
+        // Loading → ttsTapFor is null → non-interactive (see TtsTap): a tap
+        // before availability resolves must not open the dead picker.
+        val onClick: (() -> Unit)? = when (ttsTapFor(state)) {
+            TtsTap.OPEN_PICKER -> ({ callbacks.openTtsVoicePicker() })
+            TtsTap.OPEN_SETUP -> ({ callbacks.openTtsSetup() })
+            null -> null
+        }
+        bindHubCell(
+            root.findViewById(R.id.rowConfigTts),
+            HubCell(
+                iconRes = R.drawable.ic_text_to_speech,
+                title = ctx.getString(R.string.settings_cell_tts),
+                summary = summary,
+                onClick = onClick,
+            ),
+        )
+    }
+
+    /** Translation digest: cloud + online half · cloud-off + offline half, the
+     *  two glyphs inlined as muted ImageSpans ahead of each name. */
+    private fun translationSummary(state: RootSettingsViewModel.UiState): CharSequence {
+        val sb = SpannableStringBuilder()
+        appendSummaryIcon(sb, R.drawable.ic_cloud)
+        sb.append(" ").append(state.translationOnline).append(" · ")
+        appendSummaryIcon(sb, R.drawable.ic_cloud_off)
+        sb.append(" ").append(state.translationOffline)
+        return sb
+    }
+
+    private fun appendSummaryIcon(sb: SpannableStringBuilder, @DrawableRes iconRes: Int) =
+        appendInlineIcon(ctx, sb, iconRes)
+
+    // ── Tools ────────────────────────────────────────────────────────────
+
+    /** TOOLS: hub cells opening the standalone tool screens — the camera
+     *  tool on top, then image import, then translation history, then the
+     *  dictionary lookup screen. Only History carries live state; the rest
+     *  bind once here. */
+    private fun setupToolsSection() {
+        setGroupHeader(R.id.headerTools, ctx.getString(R.string.settings_header_tools))
+        refreshToolsSection()
+        // Back camera required (the tool is aimed at external text; front
+        // cameras also break the overlay mapping — mirrored preview,
+        // unmirrored analysis). Camera-less devices still SEE the cell —
+        // visible but inert, with the reason as its summary — so users on a
+        // handheld learn the tool exists on their phone. Runtime enumeration,
+        // not the feature flag: handheld ROMs declare cameras they don't have.
+        val hasBackCamera = com.playtranslate.camera.CameraAvailability.hasBackCamera(ctx)
+        bindHubCell(
+            root.findViewById(R.id.rowToolCamera),
+            HubCell(
+                iconRes = R.drawable.ic_camera,
+                title = ctx.getString(R.string.settings_cell_camera),
+                summary = ctx.getString(R.string.settings_cell_camera_summary),
+                onClick = { ctx.startActivity(Intent(ctx, CameraActivity::class.java)) },
+                disabledReason = if (hasBackCamera) null
+                else ctx.getString(R.string.settings_cell_camera_unavailable),
+            ),
+        )
+        // No hardware gate: the photo picker and SAF are permissionless and
+        // exist on every device.
+        bindHubCell(
+            root.findViewById(R.id.rowToolImportImage),
+            HubCell(
+                iconRes = R.drawable.ic_attach_file,
+                title = ctx.getString(R.string.settings_cell_image_import),
+                summary = ctx.getString(R.string.settings_cell_image_import_summary),
+                onClick = {
+                    ctx.startActivity(
+                        Intent(ctx, com.playtranslate.imageimport.ImageImportActivity::class.java)
+                    )
+                },
+            ),
+        )
+        bindHubCell(
+            root.findViewById(R.id.rowToolDictionary),
+            HubCell(
+                iconRes = R.drawable.ic_dictionary,
+                title = ctx.getString(R.string.settings_cell_dictionary),
+                summary = ctx.getString(R.string.settings_cell_dictionary_summary),
+                isLast = true,
+                onClick = { ctx.startActivity(Intent(ctx, DictionaryLookupActivity::class.java)) },
+            ),
+        )
+    }
+
+    /** Rebind the "Check for updates" cell so it picks up an availability
+     *  verdict reached elsewhere — the sheet drives this from a
+     *  [Prefs.KEY_UPDATE_AVAILABLE_TAG] observer, so a launch-time check that
+     *  lands while Settings is already open repaints the row. Safe mid-check:
+     *  the in-flight flag still owns the busy rendering. */
+    fun refreshCheckUpdatesCell() {
+        bindCheckUpdatesCell()
+    }
+
+    /** Rebind the History hub cell — its On/Off summary mirrors the master
+     *  switch on the History screen, which the user can flip while the
+     *  settings sheet is still open underneath. The sheet calls this from
+     *  onResume so the summary is fresh on every return. */
+    fun refreshToolsSection() {
+        bindHubCell(
+            root.findViewById(R.id.rowToolHistory),
+            HubCell(
+                iconRes = R.drawable.ic_history,
+                title = ctx.getString(R.string.settings_cell_history),
+                summary = ctx.getString(
+                    if (Prefs(ctx).translationHistoryEnabled) R.string.settings_cell_history_summary_on
+                    else R.string.settings_cell_history_summary_off
+                ),
+                isLast = false,
+                onClick = { ctx.startActivity(Intent(ctx, TranslationHistoryActivity::class.java)) },
+            ),
+        )
+    }
+
+    // ── Support ──────────────────────────────────────────────────────────
+
+    private fun setupSupportSection() {
+        bindCheckUpdatesCell()
+        val discordUrl = "https://go.playtranslate.com/discord"
+        bindHubCell(
+            rowDiscord,
+            HubCell(
+                iconRes = R.drawable.ic_discord,
+                title = ctx.getString(R.string.settings_support_discord_title),
+                summary = ctx.getString(R.string.settings_support_discord_subtitle),
+                trailing = Trailing.EXTERNAL,
+                onClick = { openUrl(discordUrl) },
+                onLongClick = { copyUrl(discordUrl) },
+            ),
+        )
+        // The troubleshooting rows sit together, above the donate row that
+        // closes the section (Gilad, 2026-10-06).
+        bindHubCell(
+            root.findViewById(R.id.rowKeepRunning),
+            HubCell(
+                iconRes = R.drawable.ic_mobile_wrench,
+                title = ctx.getString(R.string.settings_support_keep_running_title),
+                summary = ctx.getString(R.string.settings_support_keep_running_subtitle),
+                onClick = { ctx.startActivity(Intent(ctx, KeepRunningActivity::class.java)) },
+            ),
+        )
+        bindHubCell(
+            root.findViewById(R.id.rowReportBug),
+            HubCell(
+                iconRes = R.drawable.ic_export_notes,
+                title = ctx.getString(R.string.settings_support_report_bug_title),
+                summary = ctx.getString(R.string.settings_support_report_bug_subtitle),
+                trailing = Trailing.EXTERNAL,
+                onClick = { (ctx as? Activity)?.let { BugReport.email(it, lifecycleScope) } },
+                onLongClick = { (ctx as? Activity)?.let { BugReport.share(it, lifecycleScope) } },
+            ),
+        )
+        val donateUrl = "https://go.playtranslate.com/donate"
+        bindHubCell(
+            rowDonate,
+            HubCell(
+                iconRes = R.drawable.ic_volunteer_activism,
+                iconTint = R.attr.ptWarning,
+                title = ctx.getString(R.string.settings_support_donate_title),
+                summary = ctx.getString(R.string.settings_support_donate_subtitle),
+                trailing = Trailing.EXTERNAL,
+                isLast = true,
+                onClick = { openUrl(donateUrl) },
+                onLongClick = { copyUrl(donateUrl) },
+            ),
+        )
+    }
+
+    /** The "Check for updates" cell — Support's first row, and the only place
+     *  the installed version is stated (the old settings footer is gone).
+     *
+     *  Three inputs, one bind. [updateCheckInFlight] gives the busy rendering:
+     *  the summary swaps to "Checking…", a spinner takes the trailing slot,
+     *  and the click handler drops so the row can't re-enter. Availability
+     *  ([Prefs.updateAvailableTag], re-read on every bind so a launch-time
+     *  find lands here too) retitles the row to "Update available" and turns
+     *  the title + icon ptWarning. The version subtitle is constant: the title
+     *  says what's true, the subtitle says where you are.
+     *
+     *  The stored tag is re-tested against the running build rather than
+     *  trusted: after a self-update no check may run for another day, and a
+     *  cell still claiming an update would be a lie the user can't dismiss. */
+    private fun bindCheckUpdatesCell() {
+        // Merged into Noctis: no standalone self-update row.
+        if (!BuildConfig.SELF_UPDATE_ENABLED) {
+            rowCheckUpdates.visibility = View.GONE
+            return
+        }
+        val updateAvailable = prefs.updateAvailableTag
+            .let { it.isNotEmpty() && UpdateChecker.isNewer(it, BuildConfig.VERSION_NAME) }
+        bindHubCell(
+            rowCheckUpdates,
+            HubCell(
+                iconRes = R.drawable.ic_update,
+                iconTint = if (updateAvailable) R.attr.ptWarning else R.attr.ptAccent,
+                title = ctx.getString(
+                    if (updateAvailable) R.string.settings_support_check_updates_title_available
+                    else R.string.settings_support_check_updates_title
+                ),
+                titleTint = if (updateAvailable) R.attr.ptWarning else null,
+                summary = if (updateCheckInFlight) {
+                    ctx.getString(R.string.settings_support_check_updates_checking)
+                } else {
+                    ctx.getString(
+                        R.string.settings_support_check_updates_subtitle,
+                        BuildConfig.VERSION_NAME,
+                    )
+                },
+                trailing = if (updateCheckInFlight) Trailing.PROGRESS else Trailing.CHEVRON,
+                onClick = if (updateCheckInFlight) null else ({ startUpdateCheck() }),
+            ),
+        )
+    }
+
+    private fun startUpdateCheck() {
+        if (updateCheckInFlight) return
+        updateCheckInFlight = true
+        bindCheckUpdatesCell()
+        callbacks.onCheckForUpdatesTapped {
+            updateCheckInFlight = false
+            bindCheckUpdatesCell()
+        }
+    }
+
+    private fun openUrl(url: String) {
+        ctx.startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
+    }
+
+    /** Long-press affordance on the external-link rows: copy the URL + toast. */
+    private fun copyUrl(url: String) {
+        setClip("URL", url)
+        Toast.makeText(ctx, ctx.getString(R.string.toast_link_copied), Toast.LENGTH_SHORT).show()
+    }
+
+    private fun setClip(label: CharSequence, text: CharSequence) {
+        val clipboard =
+            ctx.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        clipboard.setPrimaryClip(android.content.ClipData.newPlainText(label, text))
+    }
+
+
+    // ── Hub cell binder ────────────────────────────────────────────────────
+
+    /** The cell's trailing slot. [PROGRESS] is the busy state of a cell whose
+     *  tap starts async work *in place* (no dialog to carry the wait): the
+     *  spinner takes the affordance's slot for as long as the work runs. */
+    enum class Trailing { CHEVRON, EXTERNAL, LOCK, PROGRESS, NONE }
+
+    /** A Settings hub cell: icon chip + title + status summary + trailing
+     *  affordance. See design_handoff_settings_cell. */
+    data class HubCell(
+        @DrawableRes val iconRes: Int,
+        @AttrRes val iconTint: Int = R.attr.ptAccent,
+        val title: String,
+        /** Overrides the title's default ptText — for a cell whose title
+         *  carries a state the user should notice (the update row going
+         *  ptWarning). The summary stays muted either way, so the colour
+         *  marks the finding without repainting the whole cell. */
+        @AttrRes val titleTint: Int? = null,
+        val summary: CharSequence?,
+        val trailing: Trailing = Trailing.CHEVRON,
+        val isLast: Boolean = false,
+        /** null → the cell is non-interactive (no ripple, no action). */
+        val onClick: (() -> Unit)?,
+        /** Long-press action — e.g. copy the URL on external-link rows. */
+        val onLongClick: (() -> Unit)? = null,
+        /** Non-null → "visible but inert", the offline backends' hardware-floor
+         *  treatment: the cell stays so the user learns the feature exists,
+         *  but reads as one recessed group — hint-toned icon/title, this
+         *  reason replacing the summary, no trailing affordance, no
+         *  interaction. */
+        val disabledReason: String? = null,
+    )
+
+    private fun bindHubCell(row: View, cell: HubCell) {
+        // "Visible but inert" (see HubCell.disabledReason): hint-toned icon
+        // and text, reason as the summary, no trailing, no interaction. Both
+        // branches set colors explicitly — rows are re-bound on refresh, so
+        // an earlier disabled pass must not leak into an enabled one.
+        val disabled = cell.disabledReason != null
+        val icon = row.findViewById<ImageView>(R.id.hubRowIcon)
+        icon.setImageResource(cell.iconRes)
+        icon.imageTintList = ColorStateList.valueOf(
+            ctx.themeColor(if (disabled) R.attr.ptTextHint else cell.iconTint)
+        )
+        val title = row.findViewById<TextView>(R.id.hubRowTitle)
+        title.text = cell.title
+        title.setTextColor(
+            ctx.themeColor(
+                if (disabled) R.attr.ptTextHint else cell.titleTint ?: R.attr.ptText
+            )
+        )
+        val summaryView = row.findViewById<TextView>(R.id.hubRowSummary)
+        val summary = cell.disabledReason ?: cell.summary
+        if (summary.isNullOrEmpty()) {
+            summaryView.isGone = true
+        } else {
+            summaryView.text = summary
+            summaryView.isVisible = true
+        }
+        summaryView.setTextColor(
+            ctx.themeColor(if (disabled) R.attr.ptTextHint else R.attr.ptTextMuted)
+        )
+        val trailing = row.findViewById<ImageView>(R.id.hubRowTrailing)
+        val trailingRes = if (disabled) null else when (cell.trailing) {
+            Trailing.CHEVRON -> R.drawable.ic_chevron_right
+            Trailing.EXTERNAL -> R.drawable.ic_open_in_new
+            Trailing.LOCK -> R.drawable.ic_lock
+            Trailing.PROGRESS, Trailing.NONE -> null
+        }
+        if (trailingRes == null) {
+            trailing.isGone = true
+        } else {
+            trailing.setImageResource(trailingRes)
+            trailing.isVisible = true
+        }
+        // Spinner and affordance share the slot: never both, and a re-bind out
+        // of the busy state must put the spinner away again.
+        row.findViewById<ProgressBar>(R.id.hubRowProgress).isVisible =
+            !disabled && cell.trailing == Trailing.PROGRESS
+        row.findViewById<View>(R.id.hubRowDivider).isVisible = !cell.isLast
+        row.contentDescription = if (disabled) "${cell.title}. ${cell.disabledReason}" else null
+        val click = cell.onClick.takeUnless { disabled }
+        if (click != null) {
+            row.isClickable = true
+            row.setOnClickListener { click() }
+        } else {
+            row.setOnClickListener(null)
+            row.isClickable = false
+        }
+        val longClick = cell.onLongClick.takeUnless { disabled }
+        if (longClick != null) {
+            row.setOnLongClickListener { longClick(); true }
+        } else {
+            row.setOnLongClickListener(null)
+            row.isLongClickable = false
+        }
+    }
+
+    // ── Debug section ────────────────────────────────────────────────────
+
+    private fun setupDebugSection() {
+        if (!BuildConfig.DEBUG) return
+        llDebugSection.isVisible = true
+
+        // Force single screen
+        val rowForceSingleScreen = root.findViewById<View>(R.id.rowForceSingleScreen)
+        val switchForceSingle = rowForceSingleScreen.findViewById<MaterialSwitch>(R.id.switchRowToggle)
+        rowForceSingleScreen.findViewById<TextView>(R.id.tvRowTitle).text = ctx.getString(R.string.settings_debug_force_single_screen)
+        switchForceSingle.isChecked = prefs.debugForceSingleScreen
+        switchForceSingle.setOnCheckedChangeListener { _, checked ->
+            prefs.debugForceSingleScreen = checked
+            callbacks.onScreenModeChanged()
+        }
+        rowForceSingleScreen.setOnClickListener { switchForceSingle.toggle() }
+
+        // Show OCR boxes
+        val rowShowOcrBoxes = root.findViewById<View>(R.id.rowShowOcrBoxes)
+        val switchOcrBoxes = rowShowOcrBoxes.findViewById<MaterialSwitch>(R.id.switchRowToggle)
+        rowShowOcrBoxes.findViewById<TextView>(R.id.tvRowTitle).text = ctx.getString(R.string.settings_debug_show_ocr_boxes)
+        switchOcrBoxes.isChecked = prefs.debugShowOcrBoxes
+        switchOcrBoxes.setOnCheckedChangeListener { _, checked ->
+            prefs.debugShowOcrBoxes = checked
+            val a11y = PlayTranslateAccessibilityService.instance
+            if (checked) a11y?.startDebugOcrLoop()
+            else a11y?.stopDebugOcrLoop()
+        }
+        rowShowOcrBoxes.setOnClickListener { switchOcrBoxes.toggle() }
+
+        // Detection log
+        val rowDetectionLog = root.findViewById<View>(R.id.rowDetectionLog)
+        val switchDetLog = rowDetectionLog.findViewById<MaterialSwitch>(R.id.switchRowToggle)
+        rowDetectionLog.findViewById<TextView>(R.id.tvRowTitle).text = ctx.getString(R.string.settings_debug_show_detection_log)
+        switchDetLog.isChecked = prefs.debugShowDetectionLog
+        switchDetLog.setOnCheckedChangeListener { _, checked ->
+            prefs.debugShowDetectionLog = checked
+        }
+        rowDetectionLog.setOnClickListener { switchDetLog.toggle() }
+
+        // Live-mode debug logging
+        val rowLiveModeDebug = root.findViewById<View>(R.id.rowLiveModeDebug)
+        val switchLiveModeDebug = rowLiveModeDebug.findViewById<MaterialSwitch>(R.id.switchRowToggle)
+        rowLiveModeDebug.findViewById<TextView>(R.id.tvRowTitle).text = ctx.getString(R.string.settings_debug_log_pinhole)
+        switchLiveModeDebug.isChecked = prefs.debugLiveMode
+        switchLiveModeDebug.setOnCheckedChangeListener { _, checked ->
+            prefs.debugLiveMode = checked
+        }
+        rowLiveModeDebug.setOnClickListener { switchLiveModeDebug.toggle() }
+
+        // Save OCR captures as seeds (for golden-set curation)
+        val rowSaveOcrSeed = root.findViewById<View>(R.id.rowSaveOcrSeed)
+        val switchSaveOcrSeed = rowSaveOcrSeed.findViewById<MaterialSwitch>(R.id.switchRowToggle)
+        rowSaveOcrSeed.findViewById<TextView>(R.id.tvRowTitle).text = ctx.getString(R.string.settings_debug_save_ocr_seed)
+        switchSaveOcrSeed.isChecked = prefs.debugSaveOcrSeed
+        switchSaveOcrSeed.setOnCheckedChangeListener { _, checked ->
+            prefs.debugSaveOcrSeed = checked
+        }
+        rowSaveOcrSeed.setOnClickListener { switchSaveOcrSeed.toggle() }
+
+        // Short-text offline routing (default OFF per the 2026-09-02 device
+        // verdict; row exists to A/B the routing without a rebuild). The
+        // reconcile nudge matters: the pref is part of the cache's routing
+        // identity, so flipping it must clear cached shorts immediately —
+        // same eager pattern the backend toggles use.
+        val rowShortText = root.findViewById<View>(R.id.rowShortTextRouting)
+        val switchShortText = rowShortText.findViewById<MaterialSwitch>(R.id.switchRowToggle)
+        rowShortText.findViewById<TextView>(R.id.tvRowTitle).text = ctx.getString(R.string.settings_debug_short_text_routing)
+        switchShortText.isChecked = prefs.debugShortTextRouting
+        switchShortText.setOnCheckedChangeListener { _, checked ->
+            prefs.debugShortTextRouting = checked
+            CaptureService.instance?.reconcileBackendPreference()
+        }
+        rowShortText.setOnClickListener { switchShortText.toggle() }
+
+        // Force the on-device LLM's mmap weight path (normally taken only
+        // below the model's availMem floor, so never on a 16 GB dev device).
+        // Read at the next model load; a loaded model keeps its current mode
+        // until it is reloaded (backend swap, unload, or process restart).
+        val rowForceMmap = root.findViewById<View>(R.id.rowForceMmapWeights)
+        val switchForceMmap = rowForceMmap.findViewById<MaterialSwitch>(R.id.switchRowToggle)
+        rowForceMmap.findViewById<TextView>(R.id.tvRowTitle).text = ctx.getString(R.string.settings_debug_force_mmap_weights)
+        switchForceMmap.isChecked = prefs.debugForceMmapWeights
+        switchForceMmap.setOnCheckedChangeListener { _, checked ->
+            prefs.debugForceMmapWeights = checked
+        }
+        rowForceMmap.setOnClickListener { switchForceMmap.toggle() }
+
+        // Log OCR grouping decisions (per-pair MERGE/SPLIT + numeric reason)
+        val rowLogGrouping = root.findViewById<View>(R.id.rowLogGrouping)
+        val switchLogGrouping = rowLogGrouping.findViewById<MaterialSwitch>(R.id.switchRowToggle)
+        rowLogGrouping.findViewById<TextView>(R.id.tvRowTitle).text = ctx.getString(R.string.settings_debug_log_grouping)
+        switchLogGrouping.isChecked = prefs.debugLogGrouping
+        switchLogGrouping.setOnCheckedChangeListener { _, checked ->
+            prefs.debugLogGrouping = checked
+            OcrManager.instance.debugLogGroupingEnabled = checked
+            OcrManager.instance.debugAngleProbeEnabled = checked
+        }
+        rowLogGrouping.setOnClickListener { switchLogGrouping.toggle() }
+
+        // The threshold-drop rollback: ON forces the pre-drop 10° slant gate
+        // (next OCR cycle onward) — one toggle undoes the drop on-device.
+        val rowAngleGate = root.findViewById<View>(R.id.rowAngleGate)
+        val switchAngleGate = rowAngleGate.findViewById<MaterialSwitch>(R.id.switchRowToggle)
+        rowAngleGate.findViewById<TextView>(R.id.tvRowTitle).text = ctx.getString(R.string.settings_debug_angle_gate)
+        switchAngleGate.isChecked = prefs.debugAngleGateAtTarget
+        switchAngleGate.setOnCheckedChangeListener { _, checked ->
+            prefs.debugAngleGateAtTarget = checked
+            OcrManager.instance.debugAngleGateDeg = if (checked) OcrBox.ANGLE_LEGACY_GATE_DEG else null
+        }
+        rowAngleGate.setOnClickListener { switchAngleGate.toggle() }
+
+        // Record live-mode commit trace (translation-log validation feed)
+        val rowLogTrace = root.findViewById<View>(R.id.rowLogTrace)
+        val switchLogTrace = rowLogTrace.findViewById<MaterialSwitch>(R.id.switchRowToggle)
+        rowLogTrace.findViewById<TextView>(R.id.tvRowTitle).text = ctx.getString(R.string.settings_debug_log_trace)
+        switchLogTrace.isChecked = prefs.debugLogTrace
+        switchLogTrace.setOnCheckedChangeListener { _, checked ->
+            // Takes effect at the next live-mode start (the recorder is
+            // created with the mode, one trace file per session).
+            prefs.debugLogTrace = checked
+        }
+        rowLogTrace.setOnClickListener { switchLogTrace.toggle() }
+
+        // OCR engine selection moved to the production Settings "OCR" section
+        // (per source language; Phase 3). The debug engine picker + PaddleOCR A/B
+        // rows are retired — hide their layout rows so they don't render empty.
+        root.findViewById<View>(R.id.rowUsePaddleOcr).isVisible = false
+        root.findViewById<View>(R.id.rowPaddleServerRec).isVisible = false
+        root.findViewById<View>(R.id.rowPaddleDumpCrops).isVisible = false
+
+        // Force crash
+        val rowForceCrash = root.findViewById<View>(R.id.rowForceCrash)
+        rowForceCrash.findViewById<TextView>(R.id.tvRowTitle).text = ctx.getString(R.string.settings_debug_force_crash_title)
+        val btnCrash = rowForceCrash.findViewById<MaterialButton>(R.id.btnRowAction)
+        btnCrash.text = ctx.getString(R.string.settings_debug_force_crash_button)
+        val crashClick = View.OnClickListener {
+            throw RuntimeException("Forced crash from Settings -> Debug -> Force crash")
+        }
+        btnCrash.setOnClickListener(crashClick)
+        rowForceCrash.setOnClickListener(crashClick)
+    }
+
+    // ── Refresh methods (called externally) ──────────────────────────────
+
+    /** Render the VM-owned root state: language names + every CONFIGURE cell
+     *  (icon chip + title + status digest). Called by the host on each
+     *  [RootSettingsViewModel] emission. The power card, stale-pack card,
+     *  Support cells (static), debug + footer are NOT here. */
+    fun render(state: RootSettingsViewModel.UiState) {
+        rowSourceLang.findViewById<TextView>(R.id.tvSourceLangValue).text = state.sourceName
+        rowTargetLang.findViewById<TextView>(R.id.tvTargetLangValue).text = state.targetName
+        bindConfigureCells(state)
+    }
+
+    /** Settings's response to [Prefs.showOverlayIcon] changing externally
+     *  (Quick Settings tile, accessibility service disabling it). The pref
+     *  feeds [CaptureLifecycle.isActive] on the accessibility backend, so a
+     *  full refresh of the lifecycle surfaces (power cell + nav-bar button +
+     *  on-screen-controls dim) is what we need. */
+    fun refreshOverlayIconState() {
+        refreshCaptureLifecycleButton()
+    }
+
+
+}

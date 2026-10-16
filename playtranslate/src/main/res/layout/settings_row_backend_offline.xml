@@ -1,0 +1,223 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Offline backend row (C7 redesign). Header row with title + status icon
+     + switch, then a 4-column stat grid (Quality | Speed | RAM | Disk).
+     Used for MlKitBackend and every OnDeviceLlmBackend subclass; online
+     backends keep settings_row_backend.xml. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingHorizontal="@dimen/pt_row_h_padding"
+    android:paddingTop="0dp"
+    android:paddingBottom="10dp"
+    android:foreground="?attr/selectableItemBackground"
+    android:clickable="true"
+    android:focusable="true">
+
+    <!-- Header row: title (flex=1) + status icon (22dp wrapper) + switch.
+         minHeight matches MaterialSwitch's touch-target height (48dp,
+         inherited from Widget.Material3.CompoundButton.MaterialSwitch via
+         @dimen/m3_minTouchTargetSize) so the header row stays the same
+         height across all four offline backends — including ML Kit,
+         whose switch is GONE. The 32dp track is centered inside that
+         48dp; without this floor the ML Kit row collapses ~16dp shorter. -->
+    <LinearLayout
+        android:id="@+id/offlineHeaderRow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:minHeight="@dimen/offline_row_header_min_height">
+
+        <!-- Title + "LLM" chip, packed against the left with the slack to
+             their right, so the chip rides beside the title instead of
+             drifting out to the status icon.
+
+             ConstraintLayout, not a nested LinearLayout, because the two want
+             opposite things when space runs short (a deprecated row spends
+             ~110dp of this line on its badge, and every width here scales with
+             the user's font size): the chip must keep its full width, the
+             title must give way. A horizontal LinearLayout can't express that
+             — it measures children in order, so a wrap_content title takes
+             what it wants and the chip behind it measures to zero and
+             silently disappears. Here the packed chain (bias 0) hugs the
+             start, and layout_constrainedWidth lets only the title shrink and
+             ellipsize.
+
+             The wrapper keeps the weight the title used to carry, so it is
+             still measured last, from what the icon and switch leave behind —
+             that is what stops a long title from pushing the switch off the
+             row. -->
+        <androidx.constraintlayout.widget.ConstraintLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1">
+
+            <TextView
+                android:id="@+id/tvOfflineTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:singleLine="true"
+                android:ellipsize="end"
+                app:layout_constrainedWidth="true"
+                app:layout_constraintHorizontal_bias="0"
+                app:layout_constraintHorizontal_chainStyle="packed"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toStartOf="@+id/tvLlmBadge"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintBottom_toBottomOf="parent"
+                style="@style/Text.PT.RowTitle" />
+
+            <!-- Shown by TranslationServicesBinder.renderOfflineBackendRow for
+                 every OnDeviceLlmBackend row (Gemma · Hunyuan-MT · Qwen);
+                 Firefox Translations and ML Kit are classic NMT engines and
+                 stay unlabelled. GONE collapses it out of the chain, leaving
+                 the title packed alone against the start. -->
+            <TextView
+                android:id="@+id/tvLlmBadge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="@string/service_llm_badge"
+                android:visibility="gone"
+                app:layout_constraintStart_toEndOf="@id/tvOfflineTitle"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintBottom_toBottomOf="parent"
+                style="@style/Text.PT.MetaLabel" />
+        </androidx.constraintlayout.widget.ConstraintLayout>
+
+        <!-- Deprecation badge: warning-colored "DEPRECATED" flanked by warning
+             triangles. Shown by SettingsRenderer.renderOfflineBackendRow only
+             for deprecated + installed rows. -->
+        <TextView
+            android:id="@+id/tvOfflineDeprecatedBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="@string/deprecated_badge_label"
+            android:textColor="?attr/ptWarning"
+            android:textSize="11sp"
+            android:fontFamily="sans-serif-medium"
+            android:textAllCaps="true"
+            android:letterSpacing="0.06"
+            android:gravity="center_vertical"
+            app:drawableStartCompat="@drawable/ic_warning_triangle"
+            app:drawableEndCompat="@drawable/ic_warning_triangle"
+            android:drawablePadding="4dp"
+            app:drawableTint="?attr/ptWarning"
+            android:importantForAccessibility="yes"
+            android:visibility="gone" />
+
+        <FrameLayout
+            android:id="@+id/ivStatusIconWrap"
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:layout_marginStart="12dp">
+
+            <ImageView
+                android:id="@+id/ivStatusIcon"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:layout_gravity="center"
+                android:importantForAccessibility="no"
+                app:tint="?attr/ptTextMuted" />
+
+            <ProgressBar
+                android:id="@+id/pbStatusDownloading"
+                style="?android:attr/progressBarStyleSmall"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:layout_gravity="center"
+                android:visibility="gone"
+                android:indeterminate="true"
+                android:indeterminateTint="?attr/ptTextMuted" />
+        </FrameLayout>
+
+        <!-- saveEnabled="false": every offline backend row uses the id
+             switchOfflineToggle, so a restore would give each switch the
+             state of whichever row saved last; see settings_row_switch.xml.
+             The binder sets it from the backend's state on every refresh. -->
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/switchOfflineToggle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:clickable="false"
+            android:focusable="false"
+            android:saveEnabled="false"
+            app:materialThemeOverlay="@style/Widget.PlayTranslate.MaterialSwitch" />
+    </LinearLayout>
+
+    <!-- Stat grid: 4 weighted cells separated by 1dp ?attr/ptDivider; wrapped
+         in a MaterialCardView for the 10dp radius + 1dp ?attr/ptDivider stroke
+         + ?attr/ptElevated fill. -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/cardStatGrid"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="0dp"
+        android:clickable="false"
+        android:focusable="false"
+        app:cardBackgroundColor="?attr/ptElevated"
+        app:cardCornerRadius="10dp"
+        app:cardElevation="0dp"
+        app:strokeColor="?attr/ptDivider"
+        app:strokeWidth="1dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:baselineAligned="false"
+            android:weightSum="4"
+            android:divider="@drawable/divider_vertical_1dp_ptdivider"
+            android:showDividers="middle">
+
+            <include
+                android:id="@+id/cellQuality"
+                layout="@layout/settings_offline_stat_cell_stars" />
+
+            <include
+                android:id="@+id/cellSpeed"
+                layout="@layout/settings_offline_stat_cell_stars" />
+
+            <include
+                android:id="@+id/cellRam"
+                layout="@layout/settings_offline_stat_cell_mono" />
+
+            <include
+                android:id="@+id/cellDisk"
+                layout="@layout/settings_offline_stat_cell_mono" />
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+
+    <!-- Inert "disabled"-state reason line, shown in place of cardStatGrid when
+         a row is unavailable: an on-device LLM whose device fails the hardware
+         floor (meetsHardwareRequirements()=false), or Bergamot with no model
+         for the current language pair. Only ever visible in that state, so its
+         small top margin pairs it tightly under the (collapsed) header. -->
+    <TextView
+        android:id="@+id/tvOfflineHardwareIncompat"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:textSize="13sp"
+        android:textColor="?attr/ptTextHint"
+        android:visibility="gone" />
+
+    <!-- Optional warning sub-row (e.g. "Low memory — translations using
+         fallback") below the grid. Visibility driven by BackendStatus.Info
+         with Tone.Warning. -->
+    <TextView
+        android:id="@+id/tvOfflineWarningLine"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:textSize="12sp"
+        android:fontFamily="sans-serif-medium"
+        android:textColor="?attr/ptWarning"
+        android:visibility="gone" />
+
+</LinearLayout>

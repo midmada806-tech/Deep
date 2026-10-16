@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Sentence-side Anki content. Just an empty vertical container —
+     SentenceAnkiContentFragment populates the Original / Translation /
+     Words / Screenshot groups programmatically so the styling matches
+     the rest of the sheet's grouped-card pattern. -->
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/sentenceAnkiRoot"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical" />

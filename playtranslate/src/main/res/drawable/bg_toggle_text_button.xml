@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Compact filled text-button background for the capture panel's header
+     toggle ("Show on screen"): a ripple over a rounded-rect FILL one surface
+     step above the cards (ptElevated), sized by the view. The toggle's ON
+     state recolors the fill via backgroundTintList (accent) with ptAccentOn
+     text, so one drawable serves both states. The 7dp radius is half
+     pt_radius - the full 14dp reads as a pill on a 32dp-tall button. Theme
+     attrs resolve at inflation, so it renders the same under the overlay's
+     non-AppCompat inflater as on the results screen. -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="?attr/ptDivider">
+    <!-- The visual box is inset 5dp top+bottom: the button DRAWS 10dp shorter
+         than its view, while the view's full bounds keep the touch target.
+         The ripple masks to the inset shape, so press feedback matches the
+         visible box. -->
+    <item
+        android:top="5dp"
+        android:bottom="5dp">
+        <shape android:shape="rectangle">
+            <corners android:radius="7dp" />
+            <solid android:color="?attr/ptElevated" />
+        </shape>
+    </item>
+</ripple>

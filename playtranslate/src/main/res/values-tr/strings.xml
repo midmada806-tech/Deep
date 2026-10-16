@@ -1,0 +1,2134 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    PlayTranslate Turkish (tr) localization.
+
+    Auto-localized from res/values/strings.xml. Per-string translator
+    notes live in that default file; this file keeps only section banners.
+
+    Formatting preserved from the source:
+      • <xliff:g …>…</xliff:g> wraps placeholders / brand names — never
+        translate or reorder their inner content (the %1$s, %2$d, … inside).
+      • <b>…</b> renders bold. \n is a newline. \{ \} are escaped braces.
+      • Brand names (PlayTranslate, Anki, DeepL, Qwen, …) stay untranslated.
+      • translatable="false" entries are omitted and fall back to English.
+      • Plurals use the one and other categories (Turkish).
+-->
+<resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         ACTIONS
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="btn_translate_once">Kaydetmeden Kullan</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         ACCESSIBILITY SERVICE
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="accessibility_service_description"><xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g>, oyun ekranının görüntülerini almak ve kayan bir yer paylaşımı simgesi göstermek için Erişilebilirlik Hizmetini kullanır. Hiçbir arayüz içeriği, giriş olayı veya kişisel veri okunmaz ya da izlenmez.</string>
+
+    <string name="accessibility_service_summary">Ekrandaki oyun metnini çevirmek için</string>
+
+    <string name="accessibility_dialog_title">Erişilebilirlik izni gerekli</string>
+
+    <string name="accessibility_dialog_message"><xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g>, alt ekranda açık kalırken üst ekrandaki oyun ekranının görüntülerini yakalamak için Erişilebilirlik iznine ihtiyaç duyar.\n\n<xliff:g id="app_name2" example="PlayTranslate">PlayTranslate</xliff:g> hiçbir arayüz içeriğini okumaz, girişi izlemez veya herhangi bir kişisel veriye erişmez — yalnızca Çevir düğmesine dokunduğunuzda ya da canlı modu başlattığınızda ekran görüntüsü alır.\n\nAyarlar → Erişilebilirlik → İndirilen uygulamalar → <xliff:g id="app_name3" example="PlayTranslate">PlayTranslate</xliff:g> → Etkinleştir yolunu izleyin.</string>
+
+    <string name="accessibility_dialog_open">Erişilebilirlik Ayarlarını Aç</string>
+
+    <string name="status_accessibility_needed">Önce Erişilebilirlik Ayarlarında <xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> uygulamasını etkinleştirin</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         QUICK SETTINGS TILE
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="tile_subtitle_a11y_required">Erişilebilirliği etkinleştir</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         STATUS MESSAGES
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="status_idle">Oyun ekranını yakalamak için Çevir düğmesine dokunun</string>
+
+    <string name="status_hold_hint">Hızlı seçim menüleri için Bölgeler veya Otomatik düğmesine uzun basın</string>
+
+    <string name="words_none">Hiçbir sözcük algılanmadı</string>
+
+    <string name="status_capturing">Ekran yakalanıyor…</string>
+
+    <string name="status_ocr">Metin tanınıyor…</string>
+
+    <string name="status_translating">Çevriliyor…</string>
+
+    <string name="capture_show_on_screen">Ekranda göster</string>
+
+    <string name="status_no_text">\"<xliff:g id="region_label" example="Dialogue box">%2$s</xliff:g>\" içinde <xliff:g id="source_language" example="Japanese">%1$s</xliff:g> metni algılanmadı</string>
+
+    <string name="status_error">Hata: <xliff:g id="error_message" example="Network timeout">%1$s</xliff:g></string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         NOTIFICATION
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="notif_channel_name">Ekran Yakalama</string>
+
+    <string name="notif_title"><xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> etkin</string>
+
+    <string name="notif_text"><xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> uygulamasına dönmek için dokunun</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         ONBOARDING
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="onboarding_welcome_title"><xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> uygulamasına hoş geldiniz!</string>
+
+    <string name="onboarding_welcome_tagline">Oynadığınız veya okuduğunuz her şeyi, hangi dilde olursa olsun anlayın.</string>
+    <string name="onboarding_welcome_play_title">Dili konuşmuyor musunuz?</string>
+    <string name="onboarding_welcome_play_body">Otomatik çeviri, kendi dilinizi doğrudan ekrana getirir ve diyaloglar değiştikçe güncellenir. Hem de çevrimdışı!</string>
+    <string name="onboarding_welcome_learn_title">Dili mi öğreniyorsunuz?</string>
+    <string name="onboarding_welcome_learn_body">Yalnızca istediğinizde yardım alın: sözcük aramaları, furigana ve pinyin, tek dokunuşla <xliff:g id="brand_anki" example="Anki">Anki</xliff:g> kartları ve daha fazlası.</string>
+
+    <string name="onboarding_welcome_row_placeholder">Seçmek için dokunun</string>
+
+    <string name="onboarding_welcome_continue">Devam Et</string>
+
+    <string name="onboarding_welcome_select_source">Oyun dilini seçin</string>
+
+    <string name="onboarding_notif_title">Bildirimlere İzin Ver</string>
+    <string name="onboarding_notif_intro">Android, arka planda çalışan uygulamaların etkin oldukları sürece durum çubuğunda bir bildirim göstermesini gerektirir.</string>
+    <string name="onboarding_notif_row_alerts_title">Uyarı veya başlık yok</string>
+    <string name="onboarding_notif_row_alerts_sub">Hiçbir şey açılmaz veya sizi rahatsız etmez</string>
+    <string name="onboarding_notif_row_silent_title">Ses veya titreşim yok</string>
+    <string name="onboarding_notif_row_silent_sub">Arka planda tamamen sessiz kalır</string>
+    <string name="onboarding_notif_row_status_title">Yalnızca bir durum çubuğu simgesi</string>
+    <string name="onboarding_notif_row_status_sub"><xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> uygulamasının çalıştığını belirten sessiz bir gösterge</string>
+
+    <string name="onboarding_a11y_hint"><b><xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g></b> öğesini arayın</string>
+
+    <string name="onboarding_a11y_title">Diğer uygulamaların üzerinde göster</string>
+    <string name="onboarding_a11y_enable_title">“<xliff:g id="setting_name" example="Display over other apps">%1$s</xliff:g>” özelliğini etkinleştirin</string>
+    <string name="onboarding_a11y_intro"><b><xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g></b> uygulamasının diğer uygulamaların üzerinde görünmesi şunlar için gereklidir:</string>
+    <string name="onboarding_a11y_row_translate_title">Çevrilen metni göster</string>
+    <string name="onboarding_a11y_row_translate_sub">Çeviriler doğrudan orijinal metnin üzerinde görünür</string>
+    <string name="onboarding_a11y_row_menu_title">Hızlı erişim menüsünü göster</string>
+    <string name="onboarding_a11y_row_menu_sub">Uygulamalar arasında geçiş yapmadan <xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> özelliklerine erişin</string>
+    <string name="onboarding_a11y_row_lookup_title">Sözcükleri ara</string>
+    <string name="onboarding_a11y_row_lookup_sub">Ekrandaki sözcükler için anında tanımlar alın</string>
+
+    <string name="btn_grant_permission">İzin Ver</string>
+
+    <string name="btn_open_a11y_settings">Erişilebilirlik Ayarlarını Aç</string>
+
+    <string name="btn_open_overlay_settings">Ayarları Aç</string>
+
+    <string name="a11y_restricted_settings_addendum">Android 13 ve sonraki sürümlerde, anahtar gri görünüyorsa üzerine bir kez dokunun, ardından <xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> için Uygulama bilgileri sayfasını açın, ⋮ menüsüne dokunun ve “Kısıtlanmış ayarlara izin verme” seçeneğini seçin.</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         WORD DETAIL
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="word_detail_no_definitions">Tanım bulunamadı.</string>
+
+    <string name="word_detail_more_examples">Daha fazla örnek</string>
+
+    <string name="word_detail_more_examples_loading">Örnekler yükleniyor…</string>
+
+    <string name="word_detail_more_examples_error">Örnekler yüklenemedi.</string>
+
+    <string name="word_detail_tatoeba_attribution"><xliff:g id="brand_tatoeba" example="Tatoeba">Tatoeba</xliff:g> kaynaklı cümleler · <xliff:g id="license_cc_by_2_fr" example="CC BY 2.0 FR">CC BY 2.0 FR</xliff:g></string>
+
+    <string name="word_detail_common">Yaygın</string>
+
+    <string name="card_words_in_sentence">Cümlede geçen sözcükler</string>
+
+    <string name="word_anki_in_decks"><xliff:g id="count" example="3">%1$d</xliff:g> Anki destesi</string>
+
+    <string name="word_anki_deck_badge_cd">Anki\'de zaten var: <xliff:g id="label" example="Core 2k">%1$s</xliff:g></string>
+
+    <string name="word_detail_numbered_definition"><xliff:g id="number" example="1">%1$d</xliff:g>. <xliff:g id="definition" example="to eat">%2$s</xliff:g></string>
+
+    <string name="word_detail_label_format"><xliff:g id="label" example="READING">%1$s</xliff:g>:</string>
+
+    <plurals name="word_detail_senses_count">
+        <item quantity="one"><xliff:g id="senses_count" example="1">%d</xliff:g> anlam</item>
+        <item quantity="other"><xliff:g id="senses_count" example="3">%d</xliff:g> anlam</item>
+    </plurals>
+
+    <plurals name="word_detail_chars_count">
+        <item quantity="one"><xliff:g id="char_count" example="1">%d</xliff:g> karakter</item>
+        <item quantity="other"><xliff:g id="char_count" example="3">%d</xliff:g> karakter</item>
+    </plurals>
+
+    <string name="word_detail_group_definitions">Tanımlar</string>
+    <string name="word_detail_group_conjugation">Çekim</string>
+    <string name="word_detail_group_declension">Ad çekimi</string>
+    <string name="word_detail_group_forms">Biçimler</string>
+
+    <string name="word_detail_group_kanji">Kanji</string>
+
+    <string name="word_detail_group_hanzi">Hanzi</string>
+
+    <string name="word_detail_mt_banner">Makine çevirisi</string>
+
+    <string name="word_detail_mt_banner_named">Makine çevirisi: <xliff:g id="backend_name" example="DeepL">%1$s</xliff:g></string>
+
+    <string name="word_detail_char_meanings_mt">Makine çevirisi · <xliff:g id="backend_name" example="DeepL">%1$s</xliff:g></string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         SETTINGS — general
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="settings_title">Ayarlar</string>
+
+    <string name="lang_translate_from">Oyun Dili</string>
+
+    <string name="lang_translate_to">Diliniz</string>
+
+    <string name="lang_download">İndir</string>
+
+    <string name="lang_download_error_title">İndirme başarısız</string>
+
+    <string name="lang_setup_preloading_message">Önceden yükleniyor, lütfen bir dakika bekleyin</string>
+
+    <string name="lang_setup_offline_model_unavailable">Çevrimdışı çeviri şu anda bu cihazda kullanılamıyor. Sözlük aramaları ve çevrimiçi çeviri çalışmaya devam eder.</string>
+
+    <string name="lang_setup_requires_64bit">64 bit cihaz gerektirir</string>
+    <string name="lang_setup_requires_64bit_msg"><xliff:g id="language" example="Russian">%1$s</xliff:g> metnini tanımak için 64 bit bir cihaz gerekir; bu cihaz 64 bit değil.</string>
+
+    <string name="lang_delete_pack">Dil paketini sil</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         LANGUAGE PICKER — search and filter
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="lang_search_hint">Dilleri ara</string>
+
+    <string name="lang_search_clear_cd">Aramayı temizle</string>
+
+    <string name="lang_search_no_results">Sonuç yok</string>
+
+    <string name="lang_section_suggested">Önerilen</string>
+
+    <string name="lang_pick_any">Herhangi bir dil</string>
+
+    <string name="lang_section_all">Tümü</string>
+
+    <plurals name="lang_search_match_count">
+        <item quantity="one"><xliff:g id="count" example="1">%d</xliff:g> sonuç</item>
+        <item quantity="other"><xliff:g id="count" example="5">%d</xliff:g> sonuç</item>
+    </plurals>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         PACK-UPGRADE FLOW
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="pack_upgrade_title">Dil Paketi Güncellemeleri Mevcut</string>
+
+    <string name="pack_upgrade_button_now">Şimdi Güncelle</string>
+
+    <string name="pack_upgrade_button_later">Sonra Güncelle</string>
+
+    <string name="pack_upgrade_mandatory_title">Güncelleme Gerekli</string>
+
+    <string name="pack_upgrade_mandatory_message"><xliff:g id="pack_list" example="Game Language (Japanese)">%1$s</xliff:g>\n\nBu güncelleme zorunludur — yüklü sürüm artık desteklenmiyor. Şimdi güncelleyin veya başka bir dil seçmek için paketi silin.</string>
+
+    <string name="pack_upgrade_button_delete">Sil</string>
+
+    <string name="pack_upgrade_progress_title">Dil paketleri güncelleniyor</string>
+
+    <string name="pack_upgrade_progress_format"><xliff:g id="pack_name" example="Japanese">%1$s</xliff:g> indiriliyor…</string>
+
+    <string name="pack_upgrade_progress_format_with_bytes"><xliff:g id="pack_name" example="Japanese">%1$s</xliff:g> indiriliyor… <xliff:g id="bytes_so_far" example="12 MB">%2$s</xliff:g> / <xliff:g id="bytes_total" example="84 MB">%3$s</xliff:g></string>
+
+    <string name="pack_upgrade_priming_models">Çeviri modelleri yükleniyor…</string>
+
+    <string name="pack_upgrade_label_source">Oyun Dili (<xliff:g id="source_language" example="Japanese">%1$s</xliff:g>)</string>
+
+    <string name="pack_upgrade_label_target">Diliniz (<xliff:g id="target_language" example="English">%1$s</xliff:g>)</string>
+
+    <string name="lang_section_update_packs_title">Dil paketlerini güncelle</string>
+    <string name="lang_section_offline_models_title">Çevrimdışı modelleri indir</string>
+    <string name="lang_section_offline_models_subtitle"><xliff:g id="source_language" example="Japanese">%1$s</xliff:g> → <xliff:g id="target_language" example="English">%2$s</xliff:g> için çevrimdışı çeviri indirilmedi. Uygulama çevrimiçi olarak çalışmaya devam eder.</string>
+
+    <string name="settings_no_displays_found">Ekran bulunamadı</string>
+
+    <string name="settings_capture_display_footer">Bir veya daha fazla ekran seçin. <xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> uygulamasını görüntülediğiniz ekran atlanır.</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         DEEPL — settings hints and warnings
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="hint_deepl_key"><xliff:g id="brand_deepl" example="DeepL">DeepL</xliff:g> API anahtarınızı buraya yapıştırın</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         TRANSLATION FALLBACK NOTES
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="note_mlkit_no_internet">⚠ İnternet bağlantısı yok — çevrimdışı çeviri gösteriliyor (daha düşük kalite).</string>
+
+    <string name="note_mlkit_service_unavailable">⚠ Çeviri hizmeti kullanılamıyor — çevrimdışı çeviri gösteriliyor (daha düşük kalite).</string>
+    <string name="note_mlkit_service_cooldown">⚠ Çeviri hizmeti geçici olarak kullanılamıyor. Çevrimdışı çeviri gösteriliyor (daha düşük kalite). Yeniden deneme: <xliff:g id="retry_time" example="3:42 PM">%1$s</xliff:g>.</string>
+    <string name="note_mlkit_quota_exhausted">⚠ Çeviri kotası doldu. Çevrimdışı çeviri gösteriliyor (daha düşük kalite). Yeniden deneme: <xliff:g id="retry_time" example="3:42 PM">%1$s</xliff:g>.</string>
+    <string name="note_mlkit_account_issue">⚠ Çeviri hizmeti hesabında sorun var (faturalandırma veya bakiye). Çevrimdışı çeviri gösteriliyor (daha düşük kalite). Ayarlardan hizmeti kontrol edin.</string>
+
+    <string name="note_low_memory_fallback">⚠ Düşük bellek — çevrimdışı çeviri gösteriliyor (daha düşük kalite).</string>
+
+    <string name="translation_source_label"><xliff:g id="backend_name" example="DeepL">%1$s</xliff:g> tarafından çevrildi</string>
+
+    <string name="ocr_source_label"><xliff:g id="ocr_engine" example="PaddleOCR">%1$s</xliff:g> tarafından tanındı</string>
+
+    <string name="ocr_picker_title">OCR aracını seçin</string>
+
+    <string name="ocr_picker_message">OCR, ekran görüntüsündeki metni çıkarır. Farklı araçlar farklı yazı tipleri için daha iyi çalışabilir</string>
+
+    <string name="cd_choose_ocr">OCR aracını seç</string>
+
+    <string name="cd_change_source_language">Oyun dilini değiştir</string>
+
+    <string name="cd_change_target_language">Dilinizi değiştir</string>
+
+    <string name="error_live_mode_unsupported_backend">Canlı mod, geçerli ekran yakalama yöntemiyle kullanılamıyor.</string>
+
+    <string name="error_screen_capture_denied">Canlı mod durduruldu — ekran yakalama izni reddedildi.</string>
+
+    <string name="error_single_app_not_fullscreen">Çeviri duraklatıldı — yakalanan uygulama ekranı kaplamıyor. Uygulama tekrar tam ekran olduğunda devam eder.</string>
+
+    <string name="error_capture_blocked_secure">Hiçbir şey okunamıyor — korumalı içerik ekran yakalamayı engelliyor.</string>
+
+    <string name="probe_initializing">Hazırlanıyor…</string>
+
+    <string name="startup_initializing_auto_mode">Otomatik mod hazırlanıyor…</string>
+
+    <string name="slow_ocr_prompt_title">Metin tanıma yavaş</string>
+
+    <string name="slow_ocr_prompt_message">Bu cihazın ekranı okuması uzun sürüyor. Daha hızlı işlem için hızlı motora geçin; okuma kalitesi biraz düşebilir. Dilediğiniz zaman ayarlardan değiştirebilirsiniz:\n\n<xliff:g id="settings" example="Settings">%1$s</xliff:g> → <xliff:g id="section" example="Capture &amp; overlay">%2$s</xliff:g> → <xliff:g id="ocr_header" example="Text recognition (OCR)">%3$s</xliff:g></string>
+
+    <string name="slow_ocr_prompt_message_camera">Bu cihazın kameradaki metni okuması uzun sürüyor. Daha hızlı işlem için hızlı motora geçin; okuma kalitesi biraz düşebilir. Kameranın motorunu bu ekrandaki ayarlar dişlisinden dilediğiniz zaman değiştirebilirsiniz.</string>
+
+    <string name="slow_ocr_prompt_switch">Hızlı motoru kullan</string>
+
+    <string name="slow_ocr_prompt_keep">Mevcut motorda kal</string>
+
+    <string name="stream_kind_prompt_title">Hangi paylaşım seçeneğini seçtiniz?</string>
+
+    <string name="stream_kind_prompt_message">Canlı çeviri, tek bir uygulama için tüm ekrandan farklı çalışır ve sistem hangisinin paylaşıldığını bildirmez.</string>
+
+    <string name="stream_kind_share_one_app">Tek bir uygulamayı paylaş</string>
+
+    <string name="stream_kind_share_entire_screen">Tüm ekranı paylaş</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         SECTION HEADERS
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="section_original">Orijinal</string>
+
+    <string name="section_translation">Çeviri</string>
+
+    <string name="section_words">Sözcükler</string>
+
+    <string name="words_loading">Sözcükler aranıyor…</string>
+
+    <string name="lens_loading">Aranıyor…</string>
+    <string name="lens_also_matches">Diğer eşleşme</string>
+    <string name="load_more_count">Daha fazla yükle (<xliff:g id="count" example="2">%1$d</xliff:g>)</string>
+    <string name="section_other_matches">Diğer eşleşmeler</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         REGION PICKER
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="label_select_region">Bölge Seç</string>
+
+    <string name="region_overlay_drag_instruction">Ekran yakalamalarını bu bölgeyle sınırlamak için kenarları sürükleyin</string>
+
+    <string name="label_edit">Düzenle</string>
+
+    <string name="label_done">Bitti</string>
+
+    <string name="label_add_custom_region">+ Özel bölge ekle</string>
+
+    <string name="label_add_custom_region_title">Özel Bölge Ekle</string>
+
+    <string name="label_region_drag_hint">İstediğiniz alanı seçmek için oyun ekranındaki bölge kutusunu sürükleyin. Üst ya da alt kenarı sürükleyin veya tüm kutuyu taşımak için ortasını sürükleyin.</string>
+
+    <string name="label_region_name">Bölge adı</string>
+
+    <string name="hint_region_name">ör. Diyalog kutusu</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         FLOATING ICON CELL
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="settings_show_overlay_icon">Kayan simgede</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         CAPTURE LIFECYCLE
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="capture_lifecycle_start">Aç</string>
+
+    <string name="capture_lifecycle_stop">Kapat</string>
+
+    <string name="capture_lifecycle_state_on">Açık</string>
+
+    <string name="capture_lifecycle_state_off">Kapalı</string>
+
+    <string name="capture_lifecycle_on_subtitle">Ekran yakalamaya izin verildi</string>
+
+    <string name="capture_lifecycle_off_subtitle">Ekran yakalamaya izin ver</string>
+
+    <string name="capture_lifecycle_standby_subtitle">Ekran yakalama beklemede</string>
+
+    <string name="game_screen_controls_title">Ekran kontrollerini göster</string>
+
+    <string name="record_audio_action">Sesi kaydet</string>
+
+    <string name="audio_recording_row_start">Ses kaydını başlat</string>
+
+    <string name="audio_recording_row_active">Ses kaydediliyor</string>
+    <string name="audio_recording_row_failed">Ses kaydı başarısız oldu</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         MEDIAPROJECTION OVERLAY-PERMISSION DIALOG
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="mp_overlay_permission_title">Diğer uygulamaların üzerinde göster</string>
+
+    <string name="mp_overlay_permission_message"><xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g>, kayan oyun ekranı kontrollerinin oyununuzun üzerinde görünebilmesi için diğer uygulamaların üzerinde görünme iznine ihtiyaç duyar.</string>
+
+    <string name="mp_overlay_permission_button">Ayarları aç</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         FLOATING-ICON GESTURES
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="icon_gesture_drag">Sürükleme</string>
+
+    <string name="icon_gesture_hold">Basılı tutma</string>
+
+    <string name="icon_gesture_tap">Dokunma</string>
+
+    <string name="icon_action_lookup_words">Üzerine gelinen sözcüğün tanımını göster</string>
+
+    <string name="icon_action_show_translations">Çevirileri ekranda göster</string>
+
+    <string name="icon_action_open_quick_menu">Hızlı menüyü aç</string>
+
+    <string name="icon_action_capture_screen">Ekranı yakala</string>
+
+    <string name="icon_action_toggle_auto_translate">Otomatik çeviriyi başlat/durdur</string>
+
+    <string name="icon_action_swap_furigana">Çeviri ile furigana arasında geçiş yap</string>
+
+    <string name="icon_action_swap_pinyin">Çeviri ile pinyin arasında geçiş yap</string>
+
+    <string name="icon_action_change_game_language">Oyun dilini değiştir</string>
+
+    <string name="icon_action_translating_from">Oyun dili: <xliff:g id="language" example="Japanese">%1$s</xliff:g></string>
+
+    <string name="icon_gestures_no_menu_title">Hızlı menüyü açan bir hareket yok</string>
+
+    <string name="icon_gestures_no_menu_message">Hızlı menü artık kayan simgeden açılamayacak. Kullanılabilir kalması için “Hızlı menüyü aç” eylemini basılı tutma veya dokunma hareketine atayın.</string>
+
+    <string name="icon_gestures_no_menu_confirm">Anladım</string>
+
+    <string name="overlay_icon_a11y_required_title">Erişilebilirlik gerekli</string>
+
+    <string name="overlay_icon_a11y_required_message">Kayan yer paylaşımı simgesi, oyun ekranına çizim yapmak için Erişilebilirlik iznine ihtiyaç duyar.\n\nAyarlar → Erişilebilirlik → İndirilen uygulamalar → <xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> → Etkinleştir yolunu izleyin.</string>
+
+    <string name="a11y_stuck_title">Erişilebilirliğin yeniden başlatılması gerekiyor</string>
+
+    <string name="a11y_stuck_message"><xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> için Erişilebilirlik açık, ancak Android, hizmeti durdurdu ve kendiliğinden yeniden başlatmayacak. Cihazınız, erişilebilirlik ayarlarında uygulamanın düzgün çalışmadığını bildirebilir.\n\nDüzeltmek için erişilebilirlik ayarlarından hizmeti kapatıp yeniden açın.</string>
+
+    <string name="a11y_stuck_message_xiaomi">Xiaomi cihazlarda ayrıca <xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> için otomatik başlatmaya izin verin ve uygulamanın sistem ayarlarında pil kullanımını “Kısıtlama yok” olarak ayarlayın. Bunlar yapılmazsa sistem, hizmeti durdurmaya devam edebilir.</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         ACCESSIBILITY-REQUIRED ALERT
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="a11y_required_alert_title">Erişilebilirlik gerekli</string>
+
+    <string name="a11y_required_displays_message">Ekranları değiştirmek veya aynı anda birden fazla ekranı çevirmek Erişilebilirlik iznini gerektirir. Bu izin, <xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> uygulamasının yalnızca ana ekranı değil, herhangi bir ekranı yakalamasını sağlar.</string>
+
+    <string name="a11y_required_hotkey_message">Kısayol tuşları ayarlamak Erişilebilirlik iznini gerektirir. Bu izin, <xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> uygulamasının oyun oynarken bastığınız tuşları algılamasını sağlar.</string>
+
+    <string name="a11y_required_enhanced_message"><xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g>, otomatik çeviri deneyimini iyileştirmek için bu gelişmiş kontrolleri kullanır.</string>
+
+    <string name="requires_android_11_title">Android 11 gerektirir</string>
+    <string name="requires_android_11_message">Bu özellik, Android 11 veya daha yenisini gerektirir.</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         ENHANCED AUTO-TRANSLATE ROW
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="enhanced_auto_translate_title">Gelişmiş otomatik çeviri</string>
+
+    <string name="enhanced_auto_translate_subtitle_off">Daha okunabilir, duyarlı ve kararlı. Erişilebilirlik erişimi gerektirir.</string>
+
+    <string name="enhanced_auto_translate_subtitle_on">Etkin</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         ANKI INTEGRATION
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="anki_deck_picker_empty">Deste bulunamadı</string>
+
+    <string name="anki_deck_picker_loading">Desteler yükleniyor…</string>
+    <string name="anki_deck_picker_title">Anki Destesi Seç</string>
+
+    <string name="anki_card_type_picker_loading">Kart türleri yükleniyor…</string>
+
+    <string name="anki_not_installed_title">Gözden geçirmek için bilgi kartı oluştur</string>
+
+    <string name="anki_not_installed_message">Oyun oynarken keşfettiğiniz sözcükleri kaydedin ve daha sonra gözden geçirin.\n\n<xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g>, çevrilen cümleleri, sözcükleri ve ekran görüntülerini, ücretsiz bir aralıklı tekrar bilgi kartı uygulaması olan <xliff:g id="brand_ankidroid" example="AnkiDroid">AnkiDroid</xliff:g>\'e doğrudan kaydedebilir.</string>
+
+    <string name="anki_not_installed_get"><xliff:g id="brand_ankidroid" example="AnkiDroid">AnkiDroid</xliff:g>\'i Edin</string>
+
+    <string name="anki_permission_rationale_title"><xliff:g id="brand_ankidroid" example="AnkiDroid">AnkiDroid</xliff:g> izni gerekli</string>
+
+    <string name="anki_permission_rationale_message"><xliff:g id="brand_anki" example="Anki">Anki</xliff:g>\'ye bilgi kartı eklemek için <xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> uygulamasının <xliff:g id="brand_ankidroid" example="AnkiDroid">AnkiDroid</xliff:g>\'e erişim izni gerekir.\n\nBu izni vermek için Devam Et düğmesine dokunun.</string>
+
+    <string name="btn_continue">Devam Et</string>
+
+    <string name="anki_permission_denied">İzin reddedildi — <xliff:g id="brand_ankidroid" example="AnkiDroid">AnkiDroid</xliff:g> ayarlarından verin</string>
+
+    <string name="anki_no_deck_selected"><xliff:g id="brand_ankidroid" example="AnkiDroid">AnkiDroid</xliff:g> içinde deste bulunamadı</string>
+
+    <string name="anki_added_no_audio"><xliff:g id="brand_anki" example="Anki">Anki</xliff:g>\'ye eklendi (ses kullanılamıyor)</string>
+
+    <string name="anki_added_no_screenshot"><xliff:g id="brand_anki" example="Anki">Anki</xliff:g>\'ye eklendi (ekran görüntüsü kullanılamıyor)</string>
+
+    <string name="anki_added_no_screenshot_or_audio"><xliff:g id="brand_anki" example="Anki">Anki</xliff:g>\'ye eklendi (ekran görüntüsü ve ses kullanılamıyor)</string>
+
+    <string name="anki_added_sentence_success">Cümle kartı <xliff:g id="brand_anki" example="Anki">Anki</xliff:g>\'ye eklendi</string>
+
+    <string name="anki_added_word_success">Sözcük kartı <xliff:g id="brand_anki" example="Anki">Anki</xliff:g>\'ye eklendi</string>
+
+    <string name="anki_adding_in_progress"><xliff:g id="brand_anki" example="Anki">Anki</xliff:g>\'ye ekleniyor…</string>
+
+    <string name="anki_send_failed_title">Kart eklenemedi</string>
+
+    <string name="anki_send_failed_message"><xliff:g id="brand_ankidroid" example="AnkiDroid">AnkiDroid</xliff:g> kartı kabul etmedi. <xliff:g id="brand_ankidroid2" example="AnkiDroid">AnkiDroid</xliff:g> uygulamasının çalıştığından emin olun, ardından tekrar deneyin.</string>
+
+    <string name="anki_card_too_large_title">Kart çok büyük</string>
+
+    <string name="anki_card_too_large_prompt">Bu kartın sözlük tanımları <xliff:g id="brand_ankidroid" example="AnkiDroid">AnkiDroid</xliff:g> uygulamasına gönderilemeyecek kadar büyük. Tanımları düz metin olan sadeleştirilmiş bir kart kaydedilsin mi?</string>
+
+    <string name="anki_card_too_large_simplify">Sadeleştirerek kaydet</string>
+
+    <string name="anki_card_too_large_failed">Bu kart, tanımlar sadeleştirilmiş olsa bile <xliff:g id="brand_ankidroid" example="AnkiDroid">AnkiDroid</xliff:g> uygulamasının kabul edemeyeceği kadar büyük. Birkaç sözcük çıkarmayı veya cümleyi kısaltmayı deneyin.</string>
+
+    <string name="anki_added_simplified"><xliff:g id="brand_anki" example="Anki">Anki</xliff:g>\'ye eklendi (tanımlar sığsın diye sadeleştirildi)</string>
+
+    <string name="anki_mode_sentence">Cümle</string>
+
+    <string name="anki_mode_word">Sözcük</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         ANKI REVIEW SHEET
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="anki_sheet_title_new_card">Yeni <xliff:g id="brand_anki" example="Anki">Anki</xliff:g> kartı</string>
+
+    <string name="anki_deck_row_label">Deste</string>
+
+    <string name="anki_deck_row_empty">Bir deste seçin</string>
+
+    <string name="anki_deck_label_format">Deste: <xliff:g id="deck_name" example="Vocabulary">%1$s</xliff:g></string>
+
+    <string name="anki_save_button_label"><xliff:g id="brand_anki" example="Anki">Anki</xliff:g> Kartını Kaydet</string>
+
+    <string name="anki_group_original">Orijinal</string>
+
+    <string name="anki_group_translation">Çeviri</string>
+
+    <string name="anki_group_words_count">Karttaki sözcükler · <xliff:g id="words_count" example="3">%d</xliff:g></string>
+
+    <string name="anki_group_definitions">Tanımlar</string>
+
+    <string name="anki_group_screenshot">Ekran görüntüsü</string>
+
+    <string name="anki_words_helper_hide">Bu sözcükler <xliff:g id="brand_anki" example="Anki">Anki</xliff:g> kartına dahil edilecek. Vurgulamak için bir sözcüğe dokunun. Karttan hariç tutmak için <xliff:g id="hide_icon" example="👁">%1$s</xliff:g> simgesine dokunun.</string>
+
+    <string name="anki_translation_error">Çevrilemedi</string>
+
+    <string name="anki_word_remove_content_description">Karttan çıkar</string>
+    <string name="hidden_word_hide_content_description">Sözcüğü gizle</string>
+    <string name="hidden_word_show_content_description">Sözcüğü göster</string>
+    <string name="hidden_word_save_failed">Kaydedilemedi. Tekrar deneyin</string>
+
+    <string name="anki_screenshot_remove_content_description">Ekran görüntüsünü kaldır</string>
+
+    <string name="anki_group_audio">Ses</string>
+
+    <string name="anki_audio_preview_content_description">Sesi önizle</string>
+
+    <string name="anki_word_audio_row_title">Sesi dahil et</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         GAME-AUDIO RECORDING
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="anki_game_audio_row_title">Oyun sesini kaydet</string>
+
+    <string name="anki_game_audio_row_subtitle">Yeni cümle kartlarının gerçek seslendirmeyi kullanabilmesi için oyun sesinin son birkaç dakikasını saklar</string>
+
+    <string name="anki_game_audio_permission_denied">İzin reddedildi — oyun sesi kaydı kapalı kalır</string>
+
+    <string name="audio_source_game_name">Oyun sesi</string>
+
+    <string name="audio_source_game_ready">Yakın zamanda oynadığınız oyundan</string>
+
+    <string name="audio_source_game_enable_hint">Kayıt yapılmıyor — sonraki kartlarda oyun sesini yakalamak için açın</string>
+
+    <string name="game_audio_zoom_hint">Daha fazla veya daha az ses görmek için parmaklarınızı yaklaştırıp uzaklaştırın</string>
+
+    <string name="game_audio_trim_duration"><xliff:g id="seconds" example="2.4">%1$s</xliff:g> sn seçili · <xliff:g id="total_seconds" example="147">%2$s</xliff:g> sn kayıtlı</string>
+
+    <string name="anki_game_audio_cell_untrimmed">Kaydederken kırpılacak</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         CARD TYPE PICKER + FIELD MAPPING
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="anki_card_type_row_label">Kart Türü</string>
+
+    <string name="anki_card_type_row_empty">Varsayılan (<xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g>)</string>
+
+    <string name="anki_card_type_pick_title">Kart Türü Seç</string>
+
+    <string name="anki_card_type_no_models"><xliff:g id="brand_ankidroid" example="AnkiDroid">AnkiDroid</xliff:g> içinde kart türü bulunamadı</string>
+
+    <string name="anki_card_type_stale_fallback">Kart türü artık mevcut değil; varsayılan kullanılıyor</string>
+
+    <string name="anki_card_type_section_default">Varsayılan</string>
+
+    <string name="anki_card_type_section_custom">Kart Türleri</string>
+
+    <string name="anki_card_type_edit_mapping_row_label">Alan eşlemesini düzenle</string>
+
+    <string name="anki_field_mapping_title"><xliff:g id="card_type_name" example="Lapis sentence">%1$s</xliff:g> öğesini yapılandır</string>
+
+    <string name="anki_field_mapping_save">Kaydet</string>
+
+    <string name="anki_field_mapping_unconfigured">Göndermeden önce bu kart türü için alanları yapılandırın</string>
+
+    <string name="anki_first_field_unmapped"><xliff:g id="brand_anki" example="Anki">Anki</xliff:g>\'nin notu tanıması için “<xliff:g id="field_name" example="Key">%1$s</xliff:g>” alanına bir değer eşleyin.</string>
+
+    <string name="anki_first_field_empty">Bu kartta “<xliff:g id="field_name" example="Key">%1$s</xliff:g>” alanı boş. <xliff:g id="brand_anki" example="Anki">Anki</xliff:g>, notu tanımlamak için ilk alanı kullanır; bu nedenle her kartta bir değeri olmalıdır.</string>
+
+    <string name="anki_models_unavailable">Kart türlerine bakmak için <xliff:g id="brand_ankidroid" example="AnkiDroid">AnkiDroid</xliff:g> uygulamasına ulaşılamadı. Birazdan tekrar deneyin.</string>
+
+    <string name="anki_card_type_basic_no_mapping">Temel kart türleri alan eşlemesi gerektirmez — Ön ve Arka, bir sözcük mü yoksa cümle mi kaydettiğinize göre otomatik olarak doldurulur.</string>
+
+    <string name="anki_content_source_pick_title">\"<xliff:g id="field_name" example="Expression">%1$s</xliff:g>\" alanını eşle</string>
+
+    <string name="anki_long_press_footer">İPUCU: Düzenlemeden anında kart oluşturmak isterseniz, normalde sizi <xliff:g id="brand_anki" example="anki">anki</xliff:g> kart oluşturma sayfasına götürecek herhangi bir düğmeye basılı tutun</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         CONTENT SOURCE LABELS
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="anki_content_none">Boş</string>
+    <string name="anki_content_none_desc">Hiçbir şey göndermez — <xliff:g id="brand_anki" example="Anki">Anki</xliff:g> alanı boş kalır.</string>
+
+    <string name="anki_content_expression">Sözcük / madde başı</string>
+    <string name="anki_content_expression_desc">Vurgulanan sözcüğün sözlük biçimi, parantezsiz. Örnek: 聞く</string>
+
+    <string name="anki_content_expression_furigana">Furiganalı sözcük / madde başı</string>
+    <string name="anki_content_expression_furigana_desc">\{\{furigana:\}\} ile işlenen alanlar için, her kanji başına furigana parantezleri içeren sözlük biçimi. Örnek: 聞[き]く</string>
+
+    <string name="anki_content_reading">Sözcük okunuşu (kana)</string>
+    <string name="anki_content_reading_desc">Vurgulanan sözcüğün saf kana okunuşu. Örnek: きく</string>
+
+    <string name="anki_content_sentence">Kaynak cümle</string>
+    <string name="anki_content_sentence_desc">Vurgulanan sözcüğün koyu yazıldığı kaynak cümle. Örnek: 友達に<b>聞いた</b></string>
+
+    <string name="anki_content_sentence_furigana">Furiganalı kaynak cümle</string>
+    <string name="anki_content_sentence_furigana_desc">\{\{furigana:\}\} ile işlenen alanlar için, her kanji başına furigana parantezleri içeren kaynak cümle. Örnek: 友達[ともだち]に<b>聞[き]いた</b></string>
+
+    <string name="anki_content_sentence_translation">Çevrilen cümle</string>
+    <string name="anki_content_sentence_translation_desc">Kaynak cümlenin, seçtiğiniz hedef dildeki çevirisi.</string>
+
+    <string name="anki_content_definition">Tanım</string>
+    <string name="anki_content_definition_desc">Vurgulanan sözcüğün HTML olarak biçimlendirilmiş sözlük tanımları.</string>
+
+    <string name="anki_content_examples">Örnek cümleler</string>
+    <string name="anki_content_examples_desc">Mevcut olduğunda, vurgulanan sözcük için <xliff:g id="brand_tatoeba" example="Tatoeba">Tatoeba</xliff:g> örnek cümleleri.</string>
+
+    <string name="anki_content_picture">Ekran görüntüsü</string>
+    <string name="anki_content_picture_desc">Resim / Ekran görüntüsü alanı için hazır, &lt;img&gt; biçimlendirmesiyle sarmalanmış bir oyun ekranı görüntüsü.</string>
+
+    <string name="anki_content_word_audio">Sözcük sesi</string>
+    <string name="anki_content_word_audio_desc">Sözcük Sesi alanı için hazır, sözcüğün metin okuma sesi.</string>
+
+    <string name="anki_content_sentence_audio">Cümle sesi</string>
+    <string name="anki_content_sentence_audio_desc">Cümle Sesi alanı için hazır, cümlenin metin okuma sesi.</string>
+
+    <string name="anki_content_frequency">Sıklık yıldızları</string>
+    <string name="anki_content_frequency_desc">Vurgulanan sözcüğün yıldız olarak sıklık derecesi. Örnek: ★★★</string>
+
+    <string name="anki_content_part_of_speech">Sözcük türü</string>
+    <string name="anki_content_part_of_speech_desc">Vurgulanan sözcük için sözcük türü etiketi (yalnızca sözcük modundaki kartlar). Örnek: noun</string>
+
+    <string name="anki_content_words_table">Sözcük listesi (cümle kartları)</string>
+    <string name="anki_content_words_table_desc"><xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> uygulamasının cümlede algıladığı her sözcüğün, okunuşları ve tanımlarıyla birlikte biçimlendirilmiş bir listesi.</string>
+
+    <string name="anki_content_pitch_position">Perde vurgusu konumu</string>
+    <string name="anki_content_pitch_position_desc">Vurgulanan sözcüğün perde vurgusu düşüş konum(lar)ı, virgülle ayrılmış. <xliff:g id="brand_lapis" example="Lapis">Lapis</xliff:g>\'in “PitchPosition” veya <xliff:g id="brand_jpmn" example="JPMN">JPMN</xliff:g>\'in “PAOverride” alanı için. Örnek: 0,2</string>
+
+    <string name="anki_content_frequency_values">Sıklık listesi</string>
+    <string name="anki_content_frequency_values_desc">Vurgulanan sözcüğün ★ derecesi ve her sıklık sözlüğü değeri, liste olarak. <xliff:g id="brand_lapis" example="Lapis">Lapis</xliff:g>\'in “Frequency” alanı için.</string>
+
+    <string name="anki_content_frequency_stylized">Sıklık listesi (JPMN stili)</string>
+    <string name="anki_content_frequency_stylized_desc">Aynı sıklık listesi, <xliff:g id="brand_jpmn" example="JPMN">JPMN</xliff:g>\'in “FrequenciesStylized” alanı için kendi biçimlendirilmiş formatında üretilir. Yalnızca <xliff:g id="brand_jpmn" example="JPMN">JPMN</xliff:g> kartlarında kullanın.</string>
+
+    <string name="anki_content_frequency_harmonic">Sıklık sıralama numarası</string>
+    <string name="anki_content_frequency_harmonic_desc">Kartları sıklığa göre sıralamak için tek bir sayı; sözcüğün sözlük sıklıklarının harmonik ortalaması (düşük = daha sık). <xliff:g id="brand_lapis" example="Lapis">Lapis</xliff:g>\'in “FreqSort” veya <xliff:g id="brand_jpmn" example="JPMN">JPMN</xliff:g>\'in “FrequencySort” alanı için.</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         CARD-TYPE STATE FLAGS
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="anki_content_flag_vocabulary">Sözcük kartı işareti (x)</string>
+    <string name="anki_content_flag_vocabulary_desc">Yalnızca sözcük modundaki gönderimlerde \"x\" üretir — <xliff:g id="brand_migaku" example="Migaku">Migaku</xliff:g>\'nun “Is Vocabulary Card” gibi şablon alanları için kullanın.</string>
+
+    <string name="anki_content_flag_sentence">Cümle kartı işareti (x)</string>
+    <string name="anki_content_flag_sentence_desc">Yalnızca cümle modundaki gönderimlerde \"x\" üretir — <xliff:g id="brand_lapis" example="Lapis">Lapis</xliff:g> veya <xliff:g id="brand_jpmn" example="JPMN">JPMN</xliff:g> şablonlarındaki “IsSentenceCard” gibi alanlar için kullanın.</string>
+
+    <string name="anki_content_flag_targeted_sentence">Hedefli cümle kartı işareti (x)</string>
+    <string name="anki_content_flag_targeted_sentence_desc">Vurgulanan bir hedef sözcük içeren cümle gönderimlerinde \"x\" üretir — <xliff:g id="brand_jpmn" example="JPMN">JPMN</xliff:g> şablonundaki “IsTargetedSentenceCard” için kullanın.</string>
+
+    <string name="anki_content_flag_always_on">Her zaman açık işaret (x)</string>
+    <string name="anki_content_flag_always_on_desc">Her zaman \"x\" üretir. Koşulsuz olarak etkin olmasını istediğiniz şablon alanları için kullanın.</string>
+
+    <string name="anki_content_section_content">İçerik</string>
+    <string name="anki_content_section_flag">Kart türü işareti</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         GENERIC CHROME
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="cd_back">Geri</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         APPEARANCE
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="pt_theme_mode_system">Sistem</string>
+    <string name="pt_theme_mode_dark">Koyu</string>
+    <string name="pt_theme_mode_light">Açık</string>
+
+    <string name="pt_accent_label">Vurgu</string>
+
+    <string name="pt_accent_coral">Mercan</string>
+    <string name="pt_accent_amber">Kehribar</string>
+    <string name="pt_accent_lime">Limon Yeşili</string>
+    <string name="pt_accent_mint">Nane Yeşili</string>
+    <string name="pt_accent_teal">Deniz Yeşili</string>
+    <string name="pt_accent_aqua">Camgöbeği</string>
+    <string name="pt_accent_sky">Gök Mavisi</string>
+    <string name="pt_accent_steel">Çelik</string>
+    <string name="pt_accent_violet">Menekşe</string>
+    <string name="pt_accent_orchid">Orkide</string>
+    <string name="pt_accent_rose">Gül</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         DEEPL — detail screen
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="deepl_settings_save">Kaydet</string>
+
+    <string name="deepl_settings_close_cd">Kapat</string>
+
+    <string name="deepl_settings_get_key_title">Ücretsiz <xliff:g id="brand_deepl" example="DeepL">DeepL</xliff:g> API anahtarı edinin</string>
+
+    <string name="deepl_settings_get_key_subtitle">Ücretsiz plan ayda 500.000 karakter içerir, ancak kaydolmak için bir kredi kartı gerektirir</string>
+
+    <string name="deepl_settings_about"><xliff:g id="brand_deepl" example="DeepL">DeepL</xliff:g>, özellikle Avrupa dillerinde yüksek kaliteli çıktısıyla bilinen bir çeviri hizmetidir.</string>
+
+    <string name="llm_backend_preset_custom">Özel</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         GENERIC LLM BACKEND SETTINGS
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="llm_backend_api_key_label">API Anahtarı</string>
+    <string name="llm_backend_index_translate_note">Ücretsizdir, API anahtarı gerekmez. Bilibili tarafından işletilir ve bu hizmet için kullanım sınırı yayımlanmamıştır. Yakalanan metin, çeviri için Bilibili\'ye gönderilir.</string>
+
+    <string name="llm_backend_model_label">Model</string>
+
+    <string name="llm_backend_provider_label">Sağlayıcı</string>
+
+    <string name="llm_backend_base_url_label">Özel URL</string>
+    <string name="llm_backend_base_url_custom_hint">Sunucunuzun URL\'sini girin</string>
+    <string name="llm_backend_base_url_invalid">https:// kullanın — http:// yalnızca yerel veya LAN adresi için izinlidir</string>
+
+    <string name="llm_backend_get_key_title_fmt"><xliff:g id="backend_name" example="OpenAI">%1$s</xliff:g> API anahtarı edinin</string>
+
+    <string name="llm_backend_model_custom_entry">Özel…</string>
+
+    <string name="llm_model_picker_loading">Modeller yükleniyor…</string>
+
+    <string name="llm_model_picker_fetch_failed">Model listesi alınamadı. API anahtarını kontrol edin veya Özel… ile bir model kimliği yazın.</string>
+    <string name="llm_model_picker_fetch_failed_keyless">Model listesi alınamadı. Daha sonra tekrar deneyin veya Özel… ile bir model kimliği yazın.</string>
+
+    <string name="llm_backend_invalid_key_alert_title">API anahtarı doğrulanamadı</string>
+
+    <string name="llm_backend_invalid_key_alert_message_fmt"><xliff:g id="backend_name" example="OpenAI">%1$s</xliff:g> girdiğiniz anahtarı reddetti. <xliff:g id="dev_console_url" example="platform.openai.com">%2$s</xliff:g> adresinden tekrar kontrol edip yeniden deneyin.</string>
+    <string name="llm_backend_key_needs_workspace_scope">Bu anahtar bir çalışma alanına bağlı değil, bu yüzden burada kullanılamaz. Claude Console\'da belirli bir çalışma alanı içinde bir anahtar oluşturup onu girin.</string>
+
+    <string name="llm_backend_invalid_key_alert_button">Tamam</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         ADVANCED LLM CONFIGURATION
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="settings_header_advanced_llm">Gelişmiş LLM yapılandırması</string>
+
+    <string name="settings_llm_context_title">Son satırları bağlam olarak kullan</string>
+
+    <string name="settings_llm_context_subtitle">Yalnızca çevrimiçi. Zamirlerin ve adların daha tutarlı olması için çevrimiçi LLM çevirmenlerine kaydedilen metnin son birkaç satırını verir.</string>
+
+    <string name="llm_prompt_row_system_title">Sistem istemi</string>
+
+    <string name="llm_prompt_row_system_subtitle">Bulut ve cihaz üzerindeki LLM çevirmenlerine gönderilen kişilik ve talimatlar.</string>
+
+    <string name="llm_prompt_row_translation_title">Çeviri istemi</string>
+
+    <string name="llm_prompt_row_translation_subtitle">Aradığınız her ifadenin çevresini saran istem.</string>
+
+    <string name="llm_prompt_row_batch_title">Toplu istem</string>
+
+    <string name="llm_prompt_row_batch_subtitle">Bulut hizmetlerinin tüm ekranı bir kerede çevirmek için kullandığı istem.</string>
+
+    <string name="llm_prompt_reset">Sıfırla</string>
+
+    <string name="llm_prompt_keywords_header">Anahtar sözcükler</string>
+
+    <string name="llm_prompt_save_anyway">Yine de kaydet</string>
+
+    <string name="llm_prompt_kw_source_desc">Kaynak dilin İngilizce adı, ör. Japanese</string>
+
+    <string name="llm_prompt_kw_source_code_desc">Kaynak dil kodu, ör. ja</string>
+
+    <string name="llm_prompt_kw_target_desc">Hedef dilin İngilizce adı, ör. English</string>
+
+    <string name="llm_prompt_kw_target_code_desc">Hedef dil kodu, ör. en</string>
+
+    <string name="llm_prompt_kw_text_desc">Çevrilecek metin</string>
+
+    <string name="llm_prompt_kw_context_desc">Bağlam etkinken son satırlar</string>
+
+    <string name="llm_prompt_kw_count_desc">Toplu çevirideki ifade sayısı</string>
+
+    <string name="llm_prompt_kw_strings_desc">Çevrilecek ifadeler, JSON dizisi olarak</string>
+
+    <string name="llm_prompt_invalid_title">Bu istem kaydedilemiyor</string>
+
+    <string name="llm_prompt_fatal_blank">İstem boş olamaz.</string>
+
+    <string name="llm_prompt_fatal_missing_text">İstem {text} içermelidir — aksi takdirde çevrilecek ifade modele hiç gönderilmez.</string>
+
+    <string name="llm_prompt_fatal_missing_strings">İstem {strings} içermelidir — aksi takdirde çevrilecek ifadeler modele hiç gönderilmez.</string>
+
+    <string name="llm_prompt_warning_title">Bu istemi gözden geçirin</string>
+
+    <string name="llm_prompt_advisory_missing_source">{source} veya {source_code} eksik: modele hangi dilden çevirdiği bildirilmez.</string>
+
+    <string name="llm_prompt_advisory_missing_target">{target} veya {target_code} eksik: modele hangi dile çevireceği bildirilmez.</string>
+
+    <string name="llm_prompt_advisory_missing_count">{N} eksik: modele kaç ifade bekleyeceği bildirilmez.</string>
+
+    <string name="llm_prompt_advisory_foreign_token"><xliff:g id="keyword" example="{text}">%1$s</xliff:g> bu istem tarafından doldurulmaz ve olduğu gibi gönderilir.</string>
+
+    <string name="llm_prompt_advisory_too_long">Bu istem çok uzun. Cihaz üzerindeki modeller yavaşlayabilir veya bağlam sınırını aşabilir.</string>
+
+    <string name="llm_prompt_discard_title">Değişiklikler atılsın mı?</string>
+
+    <string name="llm_prompt_discard_message">Bu istemde yaptığınız düzenlemeler kaydedilmedi.</string>
+
+    <string name="llm_prompt_discard_confirm">Değişiklikleri at</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         SETTINGS FOOTERS
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="tr_service_order_footer">Çeviriler, etkinleştirilmiş her hizmeti gösterilen sırayla dener ve biri kullanılamadığında bir sonrakine geçer. Çevrimiçi çeviri hizmetleri yakalanan metni alır. Etkinleştirmeden önce her sağlayıcının gizlilik politikasını inceleyin.</string>
+
+    <string name="tr_service_add_online">Çevrimiçi çeviri hizmeti ekle</string>
+
+    <string name="add_online_service_title">Çeviri hizmeti ekle</string>
+
+    <string name="service_llm_badge">LLM</string>
+
+    <string name="service_account_required">Hesap gerekli</string>
+
+    <string name="service_account_required_free">Hesap gerekli (Ücretsiz seçenek)</string>
+
+    <string name="service_no_account_required">Hesap gerekmiyor</string>
+
+    <string name="tr_service_key_tail_fmt">Anahtar ••••<xliff:g id="key_tail" example="4f2a">%1$s</xliff:g></string>
+
+    <string name="tr_service_remove_title_fmt"><xliff:g id="service_name" example="OpenAI">%1$s</xliff:g> kaldırılsın mı?</string>
+
+    <string name="tr_service_remove_message">Bu işlem hizmeti listeden kaldırır ve kayıtlı API anahtarını siler.</string>
+    <string name="tr_service_remove_message_keyless">Bu işlem hizmeti listeden kaldırır.</string>
+
+    <string name="tr_service_remove_confirm">Kaldır</string>
+
+    <string name="tr_service_delete_cd">Hizmeti kaldır</string>
+
+    <string name="tr_service_offline_footer">Çevrimdışı çeviriler, çevrimiçi çeviriler kullanılamadığında yedek olarak kullanılır. <xliff:g id="brand_mlkit" example="MLKit">MLKit</xliff:g> çevirileri kötüdür, ancak diğer seçenekler çok yavaş olabilir ve cihazı zorlayabilir; bunları otomatik çeviri için kullanırken dikkatli olun.</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         PER-BACKEND STATUS LINE
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="tr_service_status_loading">Kullanım kontrol ediliyor…</string>
+
+    <string name="tr_service_status_quota_fmt"><xliff:g id="used" example="120,345">%1$s</xliff:g> / <xliff:g id="total" example="500,000">%2$s</xliff:g> karakter kullanıldı</string>
+
+    <string name="tr_service_status_quota_with_reset_fmt"><xliff:g id="quota_line" example="120,345 / 500,000 characters used">%1$s</xliff:g> · sıfırlanma: <xliff:g id="reset_date" example="Jun 1">%2$s</xliff:g></string>
+
+    <string name="tr_service_status_invalid_key">Geçersiz API anahtarı</string>
+
+    <string name="tr_service_status_no_internet">İnternet yok, kullanım kontrol edilemiyor</string>
+
+    <string name="tr_service_status_check_failed">Kullanım kontrol edilemedi</string>
+
+    <string name="tr_service_status_no_usage_today">Bugün kullanım yok</string>
+
+    <string name="tr_service_status_usage_today_fmt">Bugün: <xliff:g id="tokens" example="12,345">%1$s</xliff:g> token</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         BACKEND QUALITY / SPEED LABELS
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="tr_service_quality_bad">Kötü kalite</string>
+    <string name="tr_service_quality_okay">Orta kalite</string>
+    <string name="tr_service_quality_good">İyi kalite</string>
+    <string name="tr_service_quality_better">Daha iyi kalite</string>
+
+    <string name="tr_service_speed_very_slow">Çok yavaş</string>
+    <string name="tr_service_speed_slow">Yavaş</string>
+    <string name="tr_service_speed_okay">Orta hız</string>
+    <string name="tr_service_speed_fast">Hızlı</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         OFFLINE BACKEND ROW
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="offline_backend_quality_label">Kalite</string>
+    <string name="offline_backend_speed_label">Hız</string>
+    <string name="offline_backend_ram_label">RAM</string>
+    <string name="offline_backend_disk_label">Disk</string>
+
+    <string name="bergamot_status_downloading">İndiriliyor… <xliff:g id="bytes_so_far" example="12 MB">%1$s</xliff:g> / <xliff:g id="bytes_total" example="50 MB">%2$s</xliff:g></string>
+
+    <string name="bergamot_download_failed">Firefox Translations modeli indirilemedi</string>
+
+    <string name="bergamot_disable_title">Firefox Translations kapatılsın mı?</string>
+
+    <string name="bergamot_disable_message">Bu dil çiftini çevrimdışı çevirmeyi durduracak. İndirilen modeli saklayabilir veya yer açmak için silebilirsiniz.</string>
+
+    <string name="bergamot_disable_keep">Yalnızca kapat</string>
+
+    <string name="bergamot_disable_delete">Modeli sil</string>
+
+    <string name="bergamot_warmup_downloading">Çevrimdışı model indiriliyor… <xliff:g id="bytes_so_far" example="12 MB">%1$s</xliff:g> / <xliff:g id="bytes_total" example="50 MB">%2$s</xliff:g></string>
+
+    <string name="bergamot_warmup_downloading_multi">Çevrimdışı model <xliff:g id="file_index" example="1">%1$d</xliff:g>/<xliff:g id="file_count" example="2">%2$d</xliff:g> indiriliyor… <xliff:g id="bytes_so_far" example="12 MB">%3$s</xliff:g> / <xliff:g id="bytes_total" example="50 MB">%4$s</xliff:g></string>
+
+    <string name="bergamot_pair_unsupported">Geçerli dil çifti için desteklenmiyor</string>
+
+    <string name="bergamot_device_unsupported">Bu cihazda desteklenmiyor</string>
+
+    <string name="offline_backend_downloaded_cd">İndirildi</string>
+    <string name="offline_backend_not_downloaded_cd">İndirilmedi</string>
+    <string name="offline_backend_enabled_cd">Etkin</string>
+    <string name="offline_backend_disabled_cd">Devre dışı</string>
+
+    <string name="offline_backend_row_a11y_fmt"><xliff:g id="title" example="Qwen 2.5 1.5B">%1$s</xliff:g>. Kalite: <xliff:g id="quality" example="Good quality">%2$s</xliff:g>. Hız: <xliff:g id="speed" example="Okay speed">%3$s</xliff:g>. <xliff:g id="ram" example="4 GB">%4$s</xliff:g> bellek gerektirir. Diskte <xliff:g id="disk_size" example="1.2 GB">%5$s</xliff:g>. <xliff:g id="downloaded_state" example="Downloaded">%6$s</xliff:g>. <xliff:g id="enabled_state" example="Enabled">%7$s</xliff:g>.</string>
+
+    <string name="offline_backend_row_a11y_no_speed_fmt"><xliff:g id="title" example="ML Kit">%1$s</xliff:g>. Kalite: <xliff:g id="quality" example="Bad quality">%2$s</xliff:g>. <xliff:g id="ram" example="&lt; 1 GB">%3$s</xliff:g> bellek gerektirir. Diskte <xliff:g id="disk_size" example="~30 MB">%4$s</xliff:g>. <xliff:g id="downloaded_state" example="Downloaded">%5$s</xliff:g>. <xliff:g id="enabled_state" example="Enabled">%6$s</xliff:g>.</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         GENERIC DOWNLOAD UI
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="model_download_extracting">Çıkarılıyor…</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         ON-DEVICE LLM TRANSLATION MODELS (MNN-backed)
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <!-- ── Shared pre-flight refusal reasons ──────────────────────── -->
+
+    <string name="model_refused_ram">Yeterli bellek yok (bu cihazda <xliff:g id="device_ram" example="3.8 GB">%1$s</xliff:g> var, <xliff:g id="needed_ram" example="4.0 GB">%2$s</xliff:g> gerekiyor)</string>
+
+    <string name="model_refused_storage">Yeterli boş alan yok (<xliff:g id="needed" example="1.2 GB">%1$s</xliff:g> gerekiyor, <xliff:g id="available" example="400 MB">%2$s</xliff:g> kullanılabilir)</string>
+
+    <!-- ── Qwen 2.5 1.5B ──────────────────────────────────────────── -->
+
+    <string name="qwen_mnn_status_not_downloaded"><xliff:g id="ram" example="4 GB">%1$s</xliff:g> bellek, <xliff:g id="disk_size" example="1.2 GB">%2$s</xliff:g> disk alanı gerektirir</string>
+
+    <string name="qwen_mnn_status_downloaded_disabled">İndirildi ama devre dışı (diskte <xliff:g id="disk_size" example="1.2 GB">%1$s</xliff:g>)</string>
+
+    <string name="qwen_mnn_status_ready"><xliff:g id="ram" example="4 GB">%1$s</xliff:g> bellek, <xliff:g id="disk_size" example="1.2 GB">%2$s</xliff:g> disk alanı gerektirir</string>
+
+    <string name="qwen_mnn_status_downloading">İndiriliyor… <xliff:g id="bytes_so_far" example="120 MB">%1$s</xliff:g> / <xliff:g id="bytes_total" example="1.2 GB">%2$s</xliff:g></string>
+
+    <string name="qwen_mnn_status_verifying">İndirme doğrulanıyor…</string>
+
+    <string name="qwen_mnn_disable_title"><xliff:g id="brand_qwen" example="Qwen">Qwen</xliff:g> (MNN) devre dışı bırakılsın mı?</string>
+
+    <string name="qwen_mnn_disable_message"><xliff:g id="disk_size" example="1.2 GB">%1$s</xliff:g> boyutundaki model yüklü. Daha sonrası için saklayabilir veya yer açmak için silebilirsiniz.</string>
+
+    <string name="qwen_mnn_download_failed">İndirme başarısız: <xliff:g id="error_message" example="Network unreachable">%1$s</xliff:g></string>
+
+    <string name="qwen_mnn_metered_warning_title">Sayaçlı ağda indirilsin mi?</string>
+
+    <string name="qwen_mnn_metered_warning_message"><xliff:g id="brand_qwen" example="Qwen 2.5 1.5B (MNN)">Qwen 2.5 1.5B (MNN)</xliff:g>, <xliff:g id="download_size" example="1.2 GB">%1$s</xliff:g> boyutundadır. Bu ağ sayaçlı olarak işaretlenmiş. Devam edilsin mi?</string>
+
+    <string name="qwen_mnn_disable_keep">Yalnızca devre dışı bırak</string>
+    <string name="qwen_mnn_disable_delete">Modeli sil</string>
+
+    <!-- ── Qwen 3.5 2B ────────────────────────────────────────────── -->
+
+    <string name="qwen35_2b_mnn_status_not_downloaded"><xliff:g id="ram" example="6 GB">%1$s</xliff:g> bellek, <xliff:g id="disk_size" example="1.3 GB">%2$s</xliff:g> disk alanı gerektirir</string>
+
+    <string name="qwen35_2b_mnn_status_downloaded_disabled">İndirildi ama devre dışı (diskte <xliff:g id="disk_size" example="1.3 GB">%1$s</xliff:g>)</string>
+
+    <string name="qwen35_2b_mnn_status_ready"><xliff:g id="ram" example="6 GB">%1$s</xliff:g> bellek, <xliff:g id="disk_size" example="1.3 GB">%2$s</xliff:g> disk alanı gerektirir</string>
+
+    <string name="qwen35_2b_mnn_status_downloading">İndiriliyor… <xliff:g id="bytes_so_far" example="120 MB">%1$s</xliff:g> / <xliff:g id="bytes_total" example="1.3 GB">%2$s</xliff:g></string>
+
+    <string name="qwen35_2b_mnn_status_verifying">İndirme doğrulanıyor…</string>
+
+    <string name="qwen35_2b_mnn_disable_title"><xliff:g id="brand_qwen" example="Qwen 3.5 2B">Qwen 3.5 2B</xliff:g> devre dışı bırakılsın mı?</string>
+
+    <string name="qwen35_2b_mnn_disable_message"><xliff:g id="disk_size" example="1.3 GB">%1$s</xliff:g> boyutundaki model yüklü. Daha sonrası için saklayabilir veya yer açmak için silebilirsiniz.</string>
+
+    <string name="qwen35_2b_mnn_download_failed">İndirme başarısız: <xliff:g id="error_message" example="Network unreachable">%1$s</xliff:g></string>
+
+    <string name="qwen35_2b_mnn_metered_warning_title">Sayaçlı ağda indirilsin mi?</string>
+
+    <string name="qwen35_2b_mnn_metered_warning_message"><xliff:g id="brand_qwen" example="Qwen 3.5 2B">Qwen 3.5 2B</xliff:g>, <xliff:g id="download_size" example="1.3 GB">%1$s</xliff:g> boyutundadır. Bu ağ sayaçlı olarak işaretlenmiş. Devam edilsin mi?</string>
+
+    <string name="qwen35_2b_mnn_disable_keep">Yalnızca devre dışı bırak</string>
+    <string name="qwen35_2b_mnn_disable_delete">Modeli sil</string>
+
+    <string name="deprecated_badge_label">Kullanımdan kaldırıldı</string>
+
+    <!-- ── Gemma 4 E2B ────────────────────────────────────────────── -->
+
+    <string name="gemma_e2b_mnn_status_not_downloaded"><xliff:g id="ram" example="6 GB">%1$s</xliff:g> bellek, <xliff:g id="disk_size" example="2.1 GB">%2$s</xliff:g> disk alanı gerektirir</string>
+
+    <string name="gemma_e2b_mnn_status_downloaded_disabled">İndirildi ama devre dışı (diskte <xliff:g id="disk_size" example="2.1 GB">%1$s</xliff:g>)</string>
+
+    <string name="gemma_e2b_mnn_status_ready"><xliff:g id="ram" example="6 GB">%1$s</xliff:g> bellek, <xliff:g id="disk_size" example="2.1 GB">%2$s</xliff:g> disk alanı gerektirir</string>
+
+    <string name="gemma_e2b_mnn_status_downloading">İndiriliyor… <xliff:g id="bytes_so_far" example="120 MB">%1$s</xliff:g> / <xliff:g id="bytes_total" example="2.1 GB">%2$s</xliff:g></string>
+
+    <string name="gemma_e2b_mnn_status_verifying">İndirme doğrulanıyor…</string>
+
+    <string name="gemma_e2b_mnn_disable_title"><xliff:g id="brand_gemma" example="Gemma 4 E2B">Gemma 4 E2B</xliff:g> devre dışı bırakılsın mı?</string>
+
+    <string name="gemma_e2b_mnn_disable_message"><xliff:g id="disk_size" example="2.1 GB">%1$s</xliff:g> boyutundaki model yüklü. Daha sonrası için saklayabilir veya yer açmak için silebilirsiniz.</string>
+
+    <string name="gemma_e2b_mnn_download_failed">İndirme başarısız: <xliff:g id="error_message" example="Network unreachable">%1$s</xliff:g></string>
+
+    <string name="gemma_e2b_mnn_metered_warning_title">Sayaçlı ağda indirilsin mi?</string>
+
+    <string name="gemma_e2b_mnn_metered_warning_message"><xliff:g id="brand_gemma" example="Gemma 4 E2B">Gemma 4 E2B</xliff:g>, <xliff:g id="download_size" example="2.1 GB">%1$s</xliff:g> boyutundadır. Bu ağ sayaçlı olarak işaretlenmiş. Devam edilsin mi?</string>
+
+    <string name="gemma_e2b_mnn_disable_keep">Yalnızca devre dışı bırak</string>
+    <string name="gemma_e2b_mnn_disable_delete">Modeli sil</string>
+
+    <!-- ── Tencent Hunyuan-MT 1.5 1.8B ────────────────────────────── -->
+
+    <string name="hymt2_status_not_downloaded"><xliff:g id="ram" example="4 GB">%1$s</xliff:g> bellek, <xliff:g id="disk_size" example="1.5 GB">%2$s</xliff:g> disk alanı gerektirir</string>
+    <string name="hymt2_status_downloaded_disabled">İndirildi ama devre dışı (diskte <xliff:g id="disk_size" example="1.5 GB">%1$s</xliff:g>)</string>
+    <string name="hymt2_status_ready"><xliff:g id="ram" example="4 GB">%1$s</xliff:g> bellek, <xliff:g id="disk_size" example="1.5 GB">%2$s</xliff:g> disk alanı gerektirir</string>
+    <string name="hymt2_status_downloading">İndiriliyor… <xliff:g id="bytes_so_far" example="120 MB">%1$s</xliff:g> / <xliff:g id="bytes_total" example="1.5 GB">%2$s</xliff:g></string>
+    <string name="hymt2_status_verifying">İndirme doğrulanıyor…</string>
+    <string name="hymt2_disable_title"><xliff:g id="brand_hymt2" example="Hy-MT2">Hy-MT2</xliff:g> devre dışı bırakılsın mı?</string>
+    <string name="hymt2_disable_message"><xliff:g id="disk_size" example="1.5 GB">%1$s</xliff:g> boyutundaki model yüklü. Daha sonrası için saklayabilir veya yer açmak için silebilirsiniz.</string>
+    <string name="hymt2_download_failed">İndirme başarısız: <xliff:g id="error_message" example="Network unreachable">%1$s</xliff:g></string>
+    <string name="hymt2_metered_warning_title">Sayaçlı ağda indirilsin mi?</string>
+    <string name="hymt2_metered_warning_message"><xliff:g id="brand_hymt2" example="Hy-MT2">Hy-MT2</xliff:g>, <xliff:g id="download_size" example="1.5 GB">%1$s</xliff:g> boyutundadır. Bu ağ sayaçlı olarak işaretlenmiş. Devam edilsin mi?</string>
+    <string name="hymt2_disable_keep">Yalnızca devre dışı bırak</string>
+    <string name="hymt2_disable_delete">Modeli sil</string>
+    <string name="hymt_status_not_downloaded"><xliff:g id="ram" example="4 GB">%1$s</xliff:g> bellek, <xliff:g id="disk_size" example="1.5 GB">%2$s</xliff:g> disk alanı gerektirir</string>
+
+    <string name="hymt_status_downloaded_disabled">İndirildi ama devre dışı (diskte <xliff:g id="disk_size" example="1.5 GB">%1$s</xliff:g>)</string>
+
+    <string name="hymt_status_ready"><xliff:g id="ram" example="4 GB">%1$s</xliff:g> bellek, <xliff:g id="disk_size" example="1.5 GB">%2$s</xliff:g> disk alanı gerektirir</string>
+
+    <string name="hymt_status_downloading">İndiriliyor… <xliff:g id="bytes_so_far" example="120 MB">%1$s</xliff:g> / <xliff:g id="bytes_total" example="1.5 GB">%2$s</xliff:g></string>
+
+    <string name="hymt_status_verifying">İndirme doğrulanıyor…</string>
+
+    <string name="hymt_disable_title"><xliff:g id="brand_hunyuan" example="Hunyuan-MT">Hunyuan-MT</xliff:g> devre dışı bırakılsın mı?</string>
+
+    <string name="hymt_disable_message"><xliff:g id="disk_size" example="1.5 GB">%1$s</xliff:g> boyutundaki model yüklü. Daha sonrası için saklayabilir veya yer açmak için silebilirsiniz.</string>
+
+    <string name="hymt_download_failed">İndirme başarısız: <xliff:g id="error_message" example="Network unreachable">%1$s</xliff:g></string>
+
+    <string name="hymt_metered_warning_title">Sayaçlı ağda indirilsin mi?</string>
+
+    <string name="hymt_metered_warning_message"><xliff:g id="brand_hunyuan15" example="Hunyuan-MT 1.5">Hunyuan-MT 1.5</xliff:g>, <xliff:g id="download_size" example="1.5 GB">%1$s</xliff:g> boyutundadır. Bu ağ sayaçlı olarak işaretlenmiş. Devam edilsin mi?</string>
+
+    <string name="hymt_disable_keep">Yalnızca devre dışı bırak</string>
+    <string name="hymt_disable_delete">Modeli sil</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         HUNYUAN-MT LEGAL ATTESTATION
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="hymt_legal_title">Yasal Bildirim &amp; Bölgesel Kısıtlama</string>
+
+    <string name="hymt_legal_message"><xliff:g id="brand_tencent" example="Tencent">Tencent</xliff:g> şirketinin <xliff:g id="brand_hunyuan15" example="Hunyuan-MT 1.5">Hunyuan-MT 1.5</xliff:g> modeli, <xliff:g id="license_name" example="Tencent HY Community License Agreement">Tencent HY Community License Agreement</xliff:g> kapsamında lisanslanmıştır. Bu lisans, Avrupa Birliği, Birleşik Krallık ve Güney Kore içindeki kullanımı hariç tutar.\n\n“Kabul Ediyorum” düğmesine dokunarak, aşağıdakileri beyan ve taahhüt edersiniz:\n\n(1) Şu anda AB, Birleşik Krallık veya Güney Kore içinde ikamet etmiyor ve bulunmuyorsunuz.\n\n(2) Bu modelin çıktılarını başka herhangi bir yapay zekâ modelini geliştirmek için kullanmayacaksınız (lisansın <xliff:g id="license_section" example="§5(b)">§5(b)</xliff:g> maddesi uyarınca).</string>
+
+    <string name="hymt_legal_agree">Kabul Ediyorum — <xliff:g id="brand_hunyuan" example="Hunyuan">Hunyuan</xliff:g>\'ı Etkinleştir</string>
+
+    <string name="hymt_legal_cancel">İptal</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         COLD-LAUNCH MIGRATION ALERT
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="legacy_engines_removed_title">Çevrimdışı çeviri güncellendi</string>
+    <string name="legacy_engines_removed_message">Eski çevrimdışı çevirmenleriniz (<xliff:g id="brand_qwen" example="Qwen">Qwen</xliff:g> ve <xliff:g id="brand_translategemma" example="TranslateGemma">TranslateGemma</xliff:g>) kaldırıldı ve daha hızlı MNN tabanlı sürümlerle değiştirildi. Yeni çevirmeni etkinleştirmek için Ayarları açın.</string>
+    <string name="legacy_engines_removed_button_settings">Ayarlar</string>
+    <string name="legacy_engines_removed_button_cancel">İptal</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         LLM HARDWARE-UNSUPPORTED STATUS LINES
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="llm_hardware_unsupported_arm64">Bu cihazda desteklenmiyor (arm64 CPU gerektirir)</string>
+
+    <string name="llm_hardware_unsupported_ram">Bu cihazda desteklenmiyor (en az <xliff:g id="min_ram_gb" example="4">%1$d</xliff:g> GB RAM gerektirir)</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         PRE-TOGGLE LOW-MEMORY GATE
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="llm_low_memory_title">Yeterli boş bellek yok</string>
+
+    <string name="llm_low_memory_message"><xliff:g id="model_name" example="Qwen 2.5 1.5B">%1$s</xliff:g> çalışmak için yaklaşık <xliff:g id="needed_memory" example="4 GB">%2$s</xliff:g> boş bellek gerektirir. Şu anda yalnızca <xliff:g id="free_memory" example="1.2 GB">%3$s</xliff:g> boş.\n\nBellek açmak için diğer uygulamaları kapatın veya bu model cihazınıza uygun değilse iptal edin.</string>
+
+    <string name="llm_low_memory_start_anyway">Yine de başlat</string>
+
+    <string name="llm_low_memory_delete">Modeli sil</string>
+
+    <string name="llm_low_memory_cancel">İptal</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         WARNING-TONE LLM STATUS LINE
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="llm_status_low_memory_badge">Düşük bellek — çeviriler yedek ile yapılıyor</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         FLOATING-ICON MENU WARNING PILL
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="degraded_warning_offline">Çevrimdışı — çeviri kalitesi düşük</string>
+    <string name="degraded_warning_cooldown">Hizmet kullanılamıyor, kalite düşük. Yeniden deneme: <xliff:g id="retry_time" example="3:42 PM">%1$s</xliff:g></string>
+    <string name="degraded_warning_quota">Kota doldu, kalite düşük. Yeniden deneme: <xliff:g id="retry_time" example="3:42 PM">%1$s</xliff:g></string>
+    <string name="degraded_warning_account">Hizmet hesabında sorun var. Kalite düşük</string>
+    <string name="degraded_warning_low_memory">Düşük bellek — çeviri kalitesi düşük</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         TRANSLATION ERROR PILL
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="translation_error_connection">Bağlantı hatası</string>
+
+    <string name="translation_error_auth"><xliff:g id="service" example="Gemini">%1$s</xliff:g>: geçersiz API anahtarı</string>
+
+    <string name="translation_error_billing"><xliff:g id="service" example="Claude">%1$s</xliff:g>: bakiye tükendi</string>
+
+    <string name="translation_error_daily_quota"><xliff:g id="service" example="Gemini">%1$s</xliff:g>: günlük sınıra ulaşıldı</string>
+
+    <string name="translation_error_monthly_quota"><xliff:g id="service" example="DeepL">%1$s</xliff:g>: aylık kota doldu</string>
+
+    <string name="translation_error_rate_limited"><xliff:g id="service" example="Gemini">%1$s</xliff:g>: çok fazla istek</string>
+
+    <string name="translation_error_server"><xliff:g id="service" example="Gemini">%1$s</xliff:g>: sunucu hatası</string>
+
+    <string name="translation_error_rejected_code"><xliff:g id="service" example="OpenAI">%1$s</xliff:g>: istek reddedildi (HTTP <xliff:g id="status_code" example="404">%2$s</xliff:g>)</string>
+
+    <string name="translation_error_rejected"><xliff:g id="service" example="OpenAI">%1$s</xliff:g>: istek reddedildi</string>
+
+    <string name="translation_error_bad_response"><xliff:g id="service" example="Gemini">%1$s</xliff:g>: beklenmeyen yanıt</string>
+
+    <string name="translation_error_timeout"><xliff:g id="service" example="DeepSeek">%1$s</xliff:g>: yanıt vermiyor</string>
+
+    <string name="translation_error_unreachable"><xliff:g id="service" example="Lingva">%1$s</xliff:g>: bağlanılamıyor</string>
+
+    <string name="translation_error_discard_card_title">Kart atılsın mı?</string>
+
+    <string name="translation_error_discard_card_message">Ayarları açarsanız bu kartı kaybedersiniz ve onu yeni bir ekran yakalamasından yeniden oluşturmanız gerekir.</string>
+
+    <string name="translation_error_discard_card_confirm">Ayarlara git</string>
+
+    <string name="hold_translation_failed">Çevrilemedi</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         MAIN SCREEN — bottom-bar and overflow-menu items
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="nav_settings">Ayarlar</string>
+
+    <string name="nav_regions">Bölgeler</string>
+
+    <string name="live_mode_auto_label">Otomatik</string>
+
+    <string name="live_mode_pause_label">Duraklat</string>
+
+    <string name="live_mode_auto_translate_label">Otomatik Çeviri</string>
+
+    <string name="live_mode_pause_auto_label">Otomatiği Duraklat</string>
+
+    <string name="live_mode_auto_with_hint">Otomatik <xliff:g id="hint_label" example="Furigana">%1$s</xliff:g></string>
+
+    <string name="menu_capture_region">Yakalama Bölgesi</string>
+
+    <string name="menu_translations">Çeviriler</string>
+
+    <string name="menu_close">Kapat</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         GENERIC BUTTON LABELS
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="btn_save">Kaydet</string>
+
+    <string name="btn_cancel">İptal</string>
+
+    <string name="btn_clear">Temizle</string>
+
+    <string name="btn_ok">Tamam</string>
+
+    <string name="btn_not_now">Şimdi değil</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         CUSTOM-REGION SHEET
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="btn_save_to_list">Listeye Kaydet</string>
+
+    <string name="custom_region_edit_title"><xliff:g id="region_label" example="Dialogue box">%1$s</xliff:g> öğesini düzenle</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         REGION PICKER SHEET
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="region_picker_editing_title">Bölgeler Düzenleniyor</string>
+
+    <string name="region_default_full_screen">Tam ekran</string>
+
+    <string name="region_default_capture">Bölge</string>
+
+    <string name="region_action_remove">Kaldır</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         MAIN-SCREEN BIG TRANSLATE BUTTON
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="translate_button_prefix_translate">Çevir:</string>
+
+    <string name="translate_button_prefix_reload">Yenile:</string>
+
+    <string name="translate_button_subtitle_hold_to_hide_translations">Çevirileri oyun ekranında gizlemek için basılı tutun</string>
+
+    <string name="translate_button_subtitle_hold_to_show_translations_instead_of_hint"><xliff:g id="hint_label" example="furigana">%1$s</xliff:g> yerine çevirileri göstermek için basılı tutun</string>
+
+    <string name="translate_button_subtitle_hold_to_show_hint">Oyun ekranında <xliff:g id="hint_label" example="furigana">%1$s</xliff:g> göstermek için basılı tutun</string>
+
+    <string name="translate_button_subtitle_hold_to_show_translations">Çevirileri oyun ekranında göstermek için basılı tutun</string>
+
+    <string name="hint_label_pinyin_lower">pinyin</string>
+    <string name="hint_label_furigana_lower">furigana</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         FLOATING ICON LONG-PRESS MENU
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="floating_icon_close_label_turn_off">Kapat</string>
+
+    <string name="floating_icon_close_label_hide">Gizle</string>
+
+    <string name="floating_menu_btn_capture_region">Bölgeyi\nYakala</string>
+
+    <string name="floating_menu_capture_screen">Ekranı\nYakala</string>
+
+    <string name="floating_menu_edit_region">Bölgeyi düzenle</string>
+
+    <string name="floating_menu_panel_language">Dil</string>
+
+    <string name="floating_menu_panel_overlays">Yer paylaşımları</string>
+
+    <string name="floating_menu_panel_open_app"><xliff:g id="app_name" example="PlayTranslate">%1$s</xliff:g> uygulamasını aç</string>
+
+    <string name="floating_menu_drag_instruction">Belirli bir alanı yakalamak için parmağınızı sürükleyin</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         DEEPL SETTINGS — API-key field label
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="deepl_api_key_field_label"><xliff:g id="brand_deepl" example="DeepL">DeepL</xliff:g> API Anahtarı</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         AUTO-TRANSLATE DIALOG
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="settings_overlay_mode_title">Yer Paylaşımı Modu</string>
+
+    <string name="settings_overlay_mode_subtitle">Otomatik mod veya basılı tutarak önizleme sırasında hangi yer paylaşımlarının gösterileceği.</string>
+
+    <string name="settings_capture_interval_title">Yakalama aralığı</string>
+
+    <string name="settings_capture_interval_seconds_suffix">sn</string>
+
+    <string name="settings_capture_interval_hint">Otomatik çeviri sırasında oyun ekranının ne sıklıkta yakalanacağı. En az <xliff:g id="min_seconds" example="1">%1$s</xliff:g> saniye.</string>
+
+    <string name="overlay_mode_option_translation">Çeviri</string>
+
+    <string name="overlay_mode_option_furigana">Furigana</string>
+
+    <string name="overlay_mode_option_pinyin">Pinyin</string>
+
+    <string name="settings_hide_overlays_during_auto_mode">Otomatik modda yer paylaşımlarını gizle</string>
+
+    <string name="settings_hide_overlays_ignored_multi_display">Birden fazla ekran seçildiğinde yok sayılır — yer paylaşımları her birinde gösterilir.</string>
+
+    <string name="settings_touches_refresh_title">Ekrana dokunmak çeviriyi yeniler</string>
+    <string name="settings_vertical_grow_title">Dikey metni genişlet</string>
+    <string name="settings_vertical_grow_subtitle">Dar dikey metin kutularını, çeviri yatay okunacak şekilde genişletir. Yakındaki içeriği kapatabilir.</string>
+
+    <string name="settings_header_overlay">Yer paylaşımı</string>
+
+    <string name="settings_overlay_min_text_title">Minimum metin boyutu</string>
+
+    <string name="settings_overlay_min_text_subtitle">Bu değeri değiştirmek, yer paylaşımlarının orijinal metinden büyük olmasına neden olabilir.</string>
+
+    <string name="settings_overlay_min_text_warning">DENEYSEL. Özellikle çok animasyonlu oyunlar oynarken otomatik çeviri yer paylaşımlarının daha sık kaldırılmasına neden olabilir</string>
+
+    <string name="settings_overlay_min_text_example">Örnek metin</string>
+
+    <string name="settings_filter_furigana_title">OCR sonucundaki furiganayı filtrele</string>
+
+    <string name="settings_edge_indicator_title">Kenar göstergesi</string>
+
+    <string name="settings_edge_indicator_subtitle">Yer paylaşımı ekrandayken ekranın çevresinde hafif bir parıltı gösterir.</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         HOTKEY SETUP DIALOG
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="dialog_hotkey_setup_title">Kısayol Tuşu Ayarla</string>
+
+    <string name="dialog_hotkey_setup_instruction">Tuş(lar)a 2 saniye basılı tutun</string>
+
+    <string name="dialog_hotkey_setup_countdown">Basılı tutun: <xliff:g id="remaining_seconds" example="1.4">%1$s</xliff:g></string>
+
+    <string name="dialog_hotkey_setup_typing_key">Bu tuş karakter yazar. Yazarken de tetiklenir. Ctrl ekleyin veya bir işlev tuşu kullanın.</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         TRANSLATION-RESULT SCREEN
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="cd_translation_result_back">Geri</string>
+
+    <string name="cd_toggle_translation_visibility">Çeviri görünürlüğünü değiştir</string>
+
+    <string name="cd_toggle_inline_furigana">Satır içi furiganayı aç/kapat</string>
+
+    <string name="cd_toggle_inline_pinyin">Satır içi pinyini aç/kapat</string>
+
+    <string name="cd_text_size">Metin boyutu</string>
+
+    <string name="cd_read_original_aloud">Orijinal metni sesli oku</string>
+
+    <string name="cd_edit_original">Orijinal metni düzenle</string>
+
+    <string name="cd_add_to_anki"><xliff:g id="brand_anki" example="Anki">Anki</xliff:g>\'ye ekle</string>
+
+    <string name="cd_more_actions">Diğer işlemler</string>
+
+    <string name="header_action_furigana">Furigana</string>
+
+    <string name="header_action_pinyin">Pinyin</string>
+
+    <string name="header_action_read_aloud">Sesli oku</string>
+
+    <string name="header_action_edit">Metni düzenle</string>
+
+    <string name="cd_toggle_original_visibility">Orijinal görünürlüğünü değiştir</string>
+
+    <string name="cd_toggle_words_visibility">Sözcük görünürlüğünü değiştir</string>
+
+    <string name="cd_close">Kapat</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         REGION-PICKER ROW
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="cd_drag_to_reorder">Yeniden sıralamak için sürükleyin</string>
+
+    <string name="cd_delete_region">Bölgeyi sil</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         MAIN ACTIVITY DIALOGS
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="crash_dialog_title"><xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> daha önce çöktü</string>
+
+    <string name="crash_dialog_message">Çökme raporu geliştiriciye gönderilsin mi? Rapor; bir yığın izini, son uygulama günlüklerini ve <xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> uygulamasının yakın zamanda OCR ile okuduğu veya aradığı metinleri içerir. Hesap bilgisi yoktur.</string>
+
+    <string name="crash_dialog_send">Gönder</string>
+
+    <string name="crash_dialog_discard">Raporu Sil</string>
+
+    <string name="crash_dialog_later">Sonra</string>
+
+    <string name="crash_email_subject"><xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> çökmesi – v<xliff:g id="version" example="2.2.0">%1$s</xliff:g></string>
+
+    <string name="crash_email_body">Yeniden oluşturma adımları:\n\n(İsteğe bağlı — bu olduğunda ne yaptığınızı açıklayın.)\n\nCihaz bilgileri ekteki dosyada yer alır.</string>
+
+    <string name="crash_email_chooser_title">Çökme raporunu gönder</string>
+
+    <string name="email_no_app_fallback">E-posta uygulaması yok. Dosyaları başka yolla gönderin: <xliff:g id="email" example="support@playtranslate.com">%1$s</xliff:g></string>
+
+    <string name="update_dialog_title">Güncelleme mevcut</string>
+
+    <string name="update_dialog_message"><xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> <xliff:g id="version_tag" example="v2.3.0">%1$s</xliff:g> sürümü <xliff:g id="brand_github" example="GitHub">GitHub</xliff:g>\'da mevcut.</string>
+
+    <string name="update_dialog_view_release">Sürüm notlarını görüntüle</string>
+
+    <string name="update_dialog_skip">Bu sürümü atla</string>
+
+    <string name="update_dialog_ask_again_later">Daha sonra tekrar sor</string>
+
+    <string name="update_dialog_download">İndir ve yükle</string>
+
+    <string name="update_dialog_size_note">İndirme boyutu: <xliff:g id="size" example="128 MB">%1$s</xliff:g></string>
+
+    <string name="update_dialog_metered_note">Sayaçlı bir bağlantı kullanıyorsunuz.</string>
+
+    <string name="update_progress_title"><xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> güncelleniyor</string>
+
+    <string name="update_progress_verifying">Doğrulanıyor…</string>
+
+    <string name="update_unknown_sources_title">Güncelleme yüklemeye izin ver</string>
+
+    <string name="update_unknown_sources_message">Güncellemeyi tamamlamak için açılan ayarlar ekranında <xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> uygulamasına güncelleme yükleme izni verin. Android, izin açıldığında uygulamayı yeniden başlatabilir. İndirilen güncelleme saklanır ve yükleme otomatik olarak devam eder.</string>
+
+    <string name="update_unknown_sources_button">Ayarları aç</string>
+
+    <string name="update_error_title">Güncelleme başarısız</string>
+
+    <string name="update_error_incomplete">İndirme düzgün tamamlanmadı. Tekrar deneyin veya güncellemeyi <xliff:g id="brand_github" example="GitHub">GitHub</xliff:g>\'dan edinin.</string>
+
+    <string name="update_error_verification">İndirilen dosya doğrulanamadı. Tekrar deneyin veya güncellemeyi <xliff:g id="brand_github" example="GitHub">GitHub</xliff:g>\'dan edinin.</string>
+
+    <string name="update_error_wrong_package">İndirilen dosya bir <xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> güncellemesi değil. Bunun yerine güncellemeyi <xliff:g id="brand_github" example="GitHub">GitHub</xliff:g>\'dan edinin.</string>
+
+    <string name="update_error_downgrade">İndirilen sürüm, yüklü sürümden daha yeni değil.</string>
+
+    <string name="update_error_signature">Bu güncelleme, mevcut sürümün üzerine yüklenemez. <xliff:g id="brand_github" example="GitHub">GitHub</xliff:g>\'dan elle yükleyin.</string>
+
+    <string name="update_error_no_space">Güncellemeyi indirmek için yeterli boş alan yok (<xliff:g id="needed" example="230 MB">%1$s</xliff:g> gerekiyor).</string>
+
+    <string name="update_error_retry">Tekrar dene</string>
+
+    <string name="update_error_install_launch">Sistem yükleyicisi açılamadı.</string>
+
+    <string name="update_none_title">Güncelleme bulunamadı</string>
+
+    <string name="update_none_message"><xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> <xliff:g id="version" example="2.4.1">%1$s</xliff:g> en son sürümdür.</string>
+
+    <string name="update_check_failed_title">Güncellemeler denetlenemedi</string>
+
+    <string name="update_check_failed_message">Yeni bir sürüm aramak için <xliff:g id="brand_github" example="GitHub">GitHub</xliff:g> adresine ulaşılamadı. Bağlantınızı kontrol edip tekrar deneyin.</string>
+
+    <string name="toast_no_browser_available">Kullanılabilir tarayıcı yok</string>
+
+    <string name="target_pack_migration_title"><xliff:g id="target_language" example="Spanish">%1$s</xliff:g> tanımları mevcut</string>
+
+    <string name="target_pack_migration_message">Bir <xliff:g id="target_language" example="Spanish">%1$s</xliff:g> tanım paketi mevcut. Sözcük tanımlarını İngilizce yerine <xliff:g id="target_language2" example="Spanish">%2$s</xliff:g> dilinde almak için indirilsin mi?</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         OVERLAY UI CONTROLLER
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="overlay_turn_off_title"><xliff:g id="app_name" example="PlayTranslate">%1$s</xliff:g> kapatılsın mı?</string>
+
+    <string name="overlay_turn_off_message"><xliff:g id="app_name" example="PlayTranslate">%1$s</xliff:g> uygulamasından tekrar açın</string>
+
+    <string name="overlay_hide_controls_title"><xliff:g id="app_name" example="PlayTranslate">%1$s</xliff:g> oyun ekranı kontrolleri gizlensin mi?</string>
+
+    <string name="overlay_hide_controls_message">“Şimdilik Gizle”, <xliff:g id="app_name" example="PlayTranslate">%1$s</xliff:g> uygulamasını bir sonraki açışınızda geri getirir. “Kapat”, ayarlardan yeniden etkinleştirilene kadar devre dışı bırakır.</string>
+
+    <string name="overlay_hide_for_now">Şimdilik Gizle</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         LANGUAGE PACK / TARGET-PACK INSTALLER DIALOGS
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="install_downloading_generic">İndiriliyor</string>
+
+    <string name="install_downloading_with_bytes">İndiriliyor… <xliff:g id="bytes_so_far" example="12 MB">%1$s</xliff:g> / <xliff:g id="bytes_total" example="84 MB">%2$s</xliff:g></string>
+
+    <string name="lang_setup_downloading_ocr_model">OCR modeli indiriliyor… <xliff:g id="bytes_so_far" example="12 MB">%1$s</xliff:g> / <xliff:g id="bytes_total" example="47 MB">%2$s</xliff:g></string>
+
+    <string name="install_downloading_definitions">Tanımlar indiriliyor</string>
+
+    <string name="install_downloading_definitions_with_bytes">Tanımlar indiriliyor… <xliff:g id="bytes_so_far" example="12 MB">%1$s</xliff:g> / <xliff:g id="bytes_total" example="84 MB">%2$s</xliff:g></string>
+
+    <string name="install_downloading_translation_model">Çeviri modeli indiriliyor</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         SETTINGS — section group headers
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="settings_header_auto_translate">Otomatik çeviri</string>
+    <string name="settings_header_capture_display">Yakalama ekranı</string>
+    <string name="settings_header_online_translations">Çevrimiçi çeviriler</string>
+    <string name="settings_header_offline_translations">Çevrimdışı çeviriler</string>
+    <string name="settings_header_ocr">Metin tanıma (OCR)</string>
+    <string name="settings_ocr_note_builtin">Yerleşik</string>
+
+    <string name="settings_ocr_default_badge">Varsayılan</string>
+
+    <string name="ocr_label_paddle_accurate">PaddleOCR (Hassas)</string>
+
+    <string name="ocr_label_paddle_fast">PaddleOCR (Hızlı)</string>
+
+    <string name="settings_ocr_tier_accurate_note">Küçük metni bulur, daha yavaş</string>
+
+    <string name="settings_ocr_tier_fast_note">Çok daha hızlı, küçük metni kaçırabilir</string>
+
+    <string name="settings_ocr_note_meiki">Oyunlar için en iyisi, en isabetli sözcük araması</string>
+
+    <string name="settings_ocr_note_mlkit">Metni yoğun ekranlarda bile yavaşlamaz</string>
+
+    <string name="settings_ocr_footer_guidance">“<xliff:g id="default_badge" example="Default">%1$s</xliff:g>” etiketli motor bu dil için önerilen seçimdir. Okuma yavaşsa daha hızlı bir seçeneği deneyin. Küçük veya süslü metin yanlış okunuyorsa farklı bir motor deneyin.</string>
+
+    <string name="settings_ocr_delete_cd"><xliff:g id="engine" example="PaddleOCR">%1$s</xliff:g> modelini sil</string>
+
+    <string name="settings_ocr_delete_title"><xliff:g id="engine" example="PaddleOCR">%1$s</xliff:g> silinsin mi?</string>
+
+    <string name="settings_ocr_delete_msg">Bu, <xliff:g id="engine" example="PaddleOCR">%1$s</xliff:g> modelini bu cihazdan kaldırır. Daha sonra tekrar indirebilirsiniz.</string>
+
+    <string name="settings_ocr_delete_shared_msg"><xliff:g id="engine" example="PaddleOCR">%1$s</xliff:g> şu diller tarafından da kullanılıyor. Silmek şimdi yer açar; bunlardan birine geçtiğinizde tekrar indirilir:\n\n<xliff:g id="languages" example="Chinese">%2$s</xliff:g></string>
+
+    <string name="settings_ocr_delete_camera_note">Kamera aracı da bu motoru kullanıyor ve standart seçiminize geri dönecek.</string>
+
+    <string name="settings_ocr_delete_import_note">Dosya içe aktarma aracı da bu motoru kullanıyor ve standart seçiminize geri dönecek.</string>
+
+    <string name="settings_ocr_delete_camera_import_note">Kamera ve dosya içe aktarma araçları da bu motoru kullanıyor ve standart seçiminize geri dönecek.</string>
+
+    <string name="settings_ocr_delete_confirm">Sil</string>
+
+    <string name="settings_ocr_downloading_title"><xliff:g id="engine" example="PaddleOCR">%1$s</xliff:g> indiriliyor</string>
+
+    <string name="settings_ocr_downloading_msg">Başlatılıyor…</string>
+
+    <string name="settings_ocr_verifying">Doğrulanıyor…</string>
+
+    <string name="settings_ocr_installing">Yükleniyor…</string>
+
+    <string name="settings_ocr_download_failed">OCR modeli indirilemedi. Bağlantınızı kontrol edip tekrar deneyin.</string>
+
+    <string name="settings_ocr_use_manga_subtitle">DENEYSEL. Yalnızca manga okumak için kullanın. Yavaştır; oyunlarda ve diğer içeriklerde kalitesi kötüdür.</string>
+
+    <string name="settings_ocr_disable_manga_title">MangaOCR kapatılsın mı?</string>
+
+    <string name="settings_ocr_disable_manga_msg">İndirilen model (<xliff:g id="size" example="68 MB">%1$s</xliff:g>) saklansın mı, yoksa yer açmak için silinsin mi?</string>
+
+    <string name="settings_ocr_disable_keep">Modeli sakla</string>
+
+    <string name="settings_ocr_disable_delete">Modeli sil</string>
+
+    <string name="settings_header_support">Destek</string>
+
+    <string name="settings_header_configure">Yapılandır</string>
+    <string name="settings_cell_appearance">Görünüm</string>
+    <string name="settings_cell_hotkeys">Kısayol tuşları</string>
+    <string name="settings_cell_capture_overlay">Yakalama &amp; yer paylaşımı</string>
+    <string name="settings_cell_anki">Anki Bilgi Kartları</string>
+    <string name="settings_cell_translation_services">Çeviri hizmetleri</string>
+    <string name="settings_cell_tts">Metin okuma</string>
+    <string name="settings_yomitan_empty_summary">Sözcük aramalarını geliştirmek için sözlük içe aktarın</string>
+    <plurals name="settings_yomitan_count_summary">
+        <item quantity="one"><xliff:g id="count" example="1">%d</xliff:g> sözlük içe aktarıldı</item>
+        <item quantity="other"><xliff:g id="count" example="3">%d</xliff:g> sözlük içe aktarıldı</item>
+    </plurals>
+
+    <plurals name="settings_yomitan_outdated_summary">
+        <item quantity="one"><xliff:g id="count" example="1">%d</xliff:g> sözlüğün yeniden içe aktarılması gerekiyor</item>
+        <item quantity="other"><xliff:g id="count" example="3">%d</xliff:g> sözlüğün yeniden içe aktarılması gerekiyor</item>
+    </plurals>
+    <string name="yomitan_page_description">Yomitan sözlükleri, Yomitan tarayıcı uzantısı tarafından kullanılan, topluluk tarafından oluşturulmuş sözlük dosyalarıdır. Sundukları arasında ek sözlükler, sıklık verileri ve perde vurgusu bulunur. + düğmesiyle bir sözlük (.zip) veya bir Yomitan sözlük koleksiyonu dışa aktarımı (.json) içe aktarın; PlayTranslate bunu uygulama genelinde sorunsuzca bütünleştirir.</string>
+
+    <string name="yomitan_outdated_label">Uygulama güncellemesinden sonra yeniden içe aktarılması gerekiyor. Dosyasını yeniden içe aktarmak için dokunun.</string>
+
+    <string name="yomitan_collection_imported_title">Koleksiyon içe aktarıldı</string>
+
+    <string name="yomitan_collection_none_title">İçe aktarılacak yeni bir şey yok</string>
+
+    <plurals name="yomitan_collection_imported_count">
+        <item quantity="one"><xliff:g id="count" example="1">%d</xliff:g> sözlük içe aktarıldı</item>
+        <item quantity="other"><xliff:g id="count" example="4">%d</xliff:g> sözlük içe aktarıldı</item>
+    </plurals>
+
+    <plurals name="yomitan_collection_skipped_count">
+        <item quantity="one"><xliff:g id="count" example="1">%d</xliff:g> sözlük zaten günceldi</item>
+        <item quantity="other"><xliff:g id="count" example="2">%d</xliff:g> sözlük zaten günceldi</item>
+    </plurals>
+    <string name="yomitan_import_action">Sözlüğü içe aktar</string>
+    <string name="yomitan_category_terms">Maddeler</string>
+    <string name="yomitan_category_kanji">Kanji</string>
+    <string name="yomitan_category_frequency">Sıklık</string>
+    <string name="yomitan_category_kanji_frequency">Kanji Sıklığı</string>
+    <string name="yomitan_category_pitch_accent">Perde Vurgusu</string>
+    <string name="yomitan_category_pronunciation">Telaffuz</string>
+    <string name="yomitan_importing_title">Sözlük içe aktarılıyor</string>
+    <string name="yomitan_importing_message">Sözlük dosyaları içe aktarılıyor…</string>
+    <string name="yomitan_importing_progress"><xliff:g id="total" example="5">%2$d</xliff:g> dosyadan <xliff:g id="current" example="2">%1$d</xliff:g>. içe aktarılıyor…</string>
+    <string name="yomitan_import_summary_title">İçe aktarma tamamlandı</string>
+    <string name="yomitan_import_summary_title_none">İçe aktarılamadı</string>
+    <plurals name="yomitan_import_summary_count">
+        <item quantity="one"><xliff:g id="total" example="1">%2$d</xliff:g> sözlükten <xliff:g id="imported" example="1">%1$d</xliff:g> tanesi içe aktarıldı.</item>
+        <item quantity="other"><xliff:g id="total" example="6">%2$d</xliff:g> sözlükten <xliff:g id="imported" example="4">%1$d</xliff:g> tanesi içe aktarıldı.</item>
+    </plurals>
+    <string name="yomitan_import_summary_duplicates">Zaten içe aktarılmış: <xliff:g id="names" example="JMdict, KANJIDIC">%1$s</xliff:g></string>
+    <string name="yomitan_import_summary_invalid">Okunamadı: <xliff:g id="names" example="notes.zip">%1$s</xliff:g></string>
+    <string name="yomitan_import_summary_no_space">Yeterli alan yok: <xliff:g id="names" example="big.zip">%1$s</xliff:g></string>
+    <string name="yomitan_import_summary_failed">Başarısız: <xliff:g id="names" example="broken.zip">%1$s</xliff:g></string>
+    <plurals name="yomitan_import_summary_more">
+        <item quantity="one">+<xliff:g id="count" example="1">%1$d</xliff:g> tane daha</item>
+        <item quantity="other">+<xliff:g id="count" example="3">%1$d</xliff:g> tane daha</item>
+    </plurals>
+    <string name="yomitan_import_summary_unknown_file">Bilinmeyen dosya</string>
+    <string name="yomitan_invalid_title">Geçersiz dosya</string>
+    <string name="yomitan_invalid_message">Bu dosya bir Yomitan sözlüğü olarak okunamadı.</string>
+    <string name="yomitan_no_space_title">Yeterli alan yok</string>
+    <string name="yomitan_no_space_message">Bu sözlüğü içe aktarmak için yaklaşık <xliff:g id="needed" example="180 MB">%1$s</xliff:g> boş alan gerekir, ancak yalnızca <xliff:g id="available" example="42 MB">%2$s</xliff:g> kullanılabilir. Yer açıp tekrar deneyin.</string>
+    <string name="yomitan_single_dict_title">Tanımları yalnızca tek bir sözlükten göster</string>
+    <string name="yomitan_single_dict_subtitle">Tanımlar, sonuç bulunan en yüksek öncelikli sözlükten gelir; yerleşik sözlük son seçenektir</string>
+    <string name="yomitan_styling_title">Sözlük stili</string>
+    <string name="yomitan_styling_subtitle">Tanımları her sözlüğün kendi düzeni ve stiliyle gösterir. Bundan sonra içe aktarılan sözlükler için geçerlidir; her zaman düz metin kullanmak için kapatın</string>
+    <string name="yomitan_auto_update_label">Otomatik güncelle</string>
+    <string name="yomitan_auto_update_subtitle">Bu sözlüğün yeni sürümlerini otomatik olarak indirir ve yükler</string>
+    <string name="yomitan_io_error_title">İçe aktarma başarısız</string>
+    <string name="yomitan_io_error_message">Dosya içe aktarılamadı. Depolama alanını kontrol edip tekrar deneyin.</string>
+    <string name="yomitan_duplicate_title">Zaten içe aktarılmış</string>
+    <string name="yomitan_duplicate_message"><xliff:g id="title" example="Jitendex.org">%1$s</xliff:g> zaten içe aktarılmış. Tekrar içe aktarmak için önce silin.</string>
+    <string name="yomitan_delete_title"><xliff:g id="title" example="Jitendex.org">%1$s</xliff:g> silinsin mi?</string>
+    <string name="yomitan_delete_message">Bu, içe aktarılan sözlüğü uygulamadan kaldırır.</string>
+    <string name="yomitan_delete_message_multi">Bu sözlük birden fazla bölümde görünüyor — hepsinden kaldırılacak.</string>
+    <string name="yomitan_delete_confirm">Sil</string>
+    <string name="cd_yomitan_delete">Sözlüğü sil</string>
+    <string name="yomitan_category_recommended">Önerilenler</string>
+    <string name="yomitan_downloading_title">Sözlük indiriliyor</string>
+    <string name="yomitan_downloading_message"><xliff:g id="received" example="3.2 MB">%1$s</xliff:g> / <xliff:g id="total" example="11 MB">%2$s</xliff:g></string>
+    <string name="cd_yomitan_download">Sözlüğü indir</string>
+    <string name="yomitan_download_error_title">İndirme başarısız</string>
+    <string name="yomitan_download_error_message">Sözlük indirilemedi. Bağlantınızı kontrol edip tekrar deneyin.</string>
+    <string name="yomitan_metadata_title">Sözlük</string>
+    <string name="yomitan_metadata_header">Üst veri</string>
+    <string name="yomitan_metadata_unavailable">Bu sözlüğün üst verisi okunamadı.</string>
+    <string name="yomitan_alias_label">Takma ad</string>
+    <string name="yomitan_alias_hint">Bir takma ad ekleyin</string>
+    <string name="yomitan_accent_default_cd">Varsayılan (altyazı metni rengi)</string>
+    <string name="yomitan_source_language_label">Kaynak dil</string>
+    <string name="yomitan_check_updates_label">Güncellemeleri denetle</string>
+    <string name="yomitan_update_checking_title">Güncellemeler denetleniyor</string>
+    <string name="yomitan_update_available_title">Güncelleme mevcut</string>
+    <string name="yomitan_update_available_message"><xliff:g id="title" example="Jitendex.org">%1$s</xliff:g> sözlüğü <xliff:g id="revision" example="2026.02.05">%2$s</xliff:g> sürümüne güncellenebilir.</string>
+    <string name="yomitan_update_confirm">Güncelle</string>
+    <string name="yomitan_update_repair_title">Yeniden indirme gerekiyor</string>
+    <string name="yomitan_update_repair_message"><xliff:g id="title" example="Jitendex.org">%1$s</xliff:g> sözlüğünün verileri, uygulamanın bu sürümüyle çalışabilmesi için yeniden indirilmelidir.</string>
+    <string name="yomitan_update_redownload_confirm">Yeniden indir</string>
+    <string name="yomitan_update_none_title">Güncel</string>
+    <string name="yomitan_update_none_message"><xliff:g id="title" example="Jitendex.org">%1$s</xliff:g> sözlüğü en son sürümde.</string>
+    <string name="yomitan_update_check_failed_title">Güncellemeler denetlenemedi</string>
+    <string name="yomitan_update_check_failed_message">Sözlüğün güncelleme sunucusuna ulaşılamadı. Bağlantınızı kontrol edip tekrar deneyin.</string>
+    <string name="yomitan_update_busy_title">Şu anda güncellenemiyor</string>
+    <string name="yomitan_update_busy_message">Bir çeviri oturumu sürüyor. Bittiğinde tekrar deneyin.</string>
+    <string name="yomitan_update_scan_active_message">Sözlük güncellemeleri arka planda zaten denetleniyor. Birazdan tekrar deneyin.</string>
+    <string name="yomitan_update_skipped_title">Güncelleme uygulanmadı</string>
+    <string name="yomitan_update_skipped_message">Güncelleme indirildi ancak bu sözlükle eşleşmediği için yüklenmedi.</string>
+    <string name="yomitan_update_done_title">Sözlük güncellendi</string>
+    <string name="yomitan_update_done_message"><xliff:g id="title" example="Jitendex.org">%1$s</xliff:g> sözlüğü artık güncel.</string>
+    <string name="settings_header_tools">Araçlar</string>
+    <string name="settings_cell_dictionary">Sözlük</string>
+    <string name="settings_cell_history">Geçmiş</string>
+    <string name="settings_cell_history_summary_on">Açık · Yakalanan cümlelerin kaydı</string>
+    <string name="settings_cell_history_summary_off">Kapalı · Yakalanan cümlelerin kaydı</string>
+    <string name="history_screen_title">Geçmiş</string>
+    <string name="history_toggle_title">Metin geçmişini tut</string>
+    <string name="history_toggle_subtitle">Yakalanan cümleleri bu cihazda kaydeder</string>
+    <string name="history_empty_off">Metin geçmişi kapalı. <xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> uygulamasının yakaladığı cümleleri saklamak için açın.</string>
+    <string name="history_empty_none">Henüz bir şey yok. Satırlar çevrildikçe burada görünür.</string>
+    <string name="history_action_copy">Kopyala</string>
+    <string name="history_action_anki">Anki\'ye ekle</string>
+    <string name="history_action_delete">Sil</string>
+    <string name="history_clear_menu">Geçmişi temizle</string>
+    <string name="history_clear_confirm_title">Tüm geçmiş temizlensin mi?</string>
+    <string name="history_clear_confirm_message">Kaydedilen her satır bu cihazdan silinecek.</string>
+    <string name="history_delete_confirm_title">Bu kayıt silinsin mi?</string>
+    <string name="history_copied_toast">Kopyalandı</string>
+
+    <string name="history_capture_image_toggle_title">Yakalama görüntülerini kaydet</string>
+
+    <string name="history_capture_image_toggle_subtitle">Her kamera veya ekran yakalamasının bir görüntüsünü saklar</string>
+
+    <string name="history_hide_translations_toggle_title">Çevirileri gizle</string>
+
+    <string name="history_hide_translations_toggle_subtitle">Yalnızca yakalanan metni gösterir. Çevirisini görmek için bir satıra dokunun.</string>
+
+    <string name="history_live_session_title">Canlı oturum</string>
+
+    <plurals name="history_line_count">
+        <item quantity="one"><xliff:g id="count" example="1">%d</xliff:g> satır</item>
+        <item quantity="other"><xliff:g id="count" example="42">%d</xliff:g> satır</item>
+    </plurals>
+
+    <string name="history_capture_camera_cd">Kamera yakalaması</string>
+
+    <string name="history_capture_screen_cd">Ekran yakalaması</string>
+
+    <string name="history_reopen_cd">Yakalama görüntüsünü aç</string>
+    <string name="settings_cell_dictionary_summary">Sözcük tanımlarına bakın</string>
+
+    <string name="image_import_no_text">Bu görselde <xliff:g id="source_language" example="Japanese">%1$s</xliff:g> metni algılanmadı</string>
+
+    <string name="settings_cell_image_import">Dosya içe aktar</string>
+
+    <string name="settings_cell_image_import_summary">Kayıtlı bir görseli veya belgeyi çevirin</string>
+
+    <string name="image_import_landing_title">Bir resimdeki veya belgedeki metni çevirin</string>
+
+    <string name="image_import_pick_photos">Fotoğraf seç</string>
+
+    <string name="image_import_pick_files">Dosyalara göz at</string>
+
+    <string name="image_import_paste_image">Kopyalanan görseli yapıştır</string>
+
+    <string name="image_import_decode_failed">Bu dosya açılamadı.</string>
+
+    <string name="image_import_unsupported">Bu dosya türü desteklenmiyor. Bir görsel, PDF veya çizgi roman arşivi seçin.</string>
+
+    <string name="image_import_password_protected">Bu PDF parola korumalı ve açılamıyor.</string>
+
+    <string name="image_import_empty">Bu dosyada sayfa bulunamadı.</string>
+
+    <string name="image_import_mixed_selection">Birden fazla dosyayı aynı anda içe aktarmak için yalnızca görsel seçin. PDF ve çizgi roman arşivleri teker teker açılır.</string>
+
+    <string name="image_import_close_cd">Dosyayı kapat</string>
+
+    <string name="image_import_settings_cd">Dosya içe aktarma ayarları</string>
+
+    <string name="image_import_page_chip"><xliff:g id="page" example="3">%1$d</xliff:g> / <xliff:g id="count" example="14">%2$d</xliff:g></string>
+
+    <string name="image_import_prev_page_cd">Önceki sayfa</string>
+
+    <string name="image_import_next_page_cd">Sonraki sayfa</string>
+
+    <string name="image_import_page_grid_cd">Tüm sayfaları göster</string>
+
+    <string name="slow_ocr_prompt_message_import">Bu cihazın bu dosyadaki metni okuması uzun sürüyor. Daha hızlı işlem için hızlı motora geçin; okuma kalitesi biraz düşebilir. Bu aracın motorunu bu ekrandaki ayarlar dişlisinden dilediğiniz zaman değiştirebilirsiniz.</string>
+
+    <string name="settings_cell_camera">Kamera</string>
+
+    <string name="settings_cell_camera_summary">Çevirmek için kameranızı metne doğrultun</string>
+
+    <string name="settings_cell_camera_unavailable">Kamera algılanmadı</string>
+
+    <string name="camera_permission_rationale">PlayTranslate, doğrulttuğunuz metni çevirmek için kamera erişimine ihtiyaç duyar. Görüntüler bu cihazda işlenir.</string>
+
+    <string name="camera_permission_grant">Kamera erişimine izin ver</string>
+
+    <string name="camera_permission_denied">Kamera erişimi reddedildi. Kamerayı kullanmak için sistem ayarlarından izin verin.</string>
+
+    <string name="camera_open_settings">Ayarları aç</string>
+
+    <string name="camera_unavailable">Bu cihazda kullanılabilir kamera yok</string>
+
+    <string name="camera_back_cd">Geri</string>
+
+    <string name="camera_no_text_hint">Okunabilir metin yok — yaklaşmayı deneyin veya odaklamak için dokunun</string>
+
+    <string name="camera_pause_cd">Otomatik çeviriyi duraklat</string>
+
+    <string name="camera_play_cd">Otomatik çeviriyi sürdür</string>
+
+    <string name="camera_shutter_cd">Anlık görüntü al</string>
+
+    <string name="camera_close_cd">Anlık görüntüyü kapat</string>
+
+    <string name="camera_snapshot_no_text">Bu anlık görüntüde <xliff:g id="source_language" example="Japanese">%1$s</xliff:g> metni algılanmadı</string>
+
+    <string name="camera_region_cd">Bir bölge seçin</string>
+
+    <string name="camera_region_remove">Kaldır</string>
+
+    <string name="capture_sliver_expand_hint">Daha fazla seçenek için dokunun</string>
+
+    <string name="camera_settings_cd">Kamera ayarları</string>
+
+    <string name="settings_digest_none">Yok</string>
+    <string name="settings_capture_displays_count"><xliff:g id="count" example="2">%1$d</xliff:g> Ekran</string>
+
+    <string name="settings_hotkeys_tile_add">Kutucuk ekle</string>
+    <string name="settings_hotkeys_none">Kısayol tuşu ayarlanmadı</string>
+    <string name="settings_hotkeys_translation">Çeviri</string>
+    <string name="settings_hotkeys_furigana">Furigana</string>
+    <string name="settings_hotkeys_pinyin">Pinyin</string>
+
+    <string name="settings_anki_digest">Deste: <xliff:g id="deck_name" example="Vocabulary">%1$s</xliff:g> · Kart türü: <xliff:g id="card_type_name" example="Lapis sentence">%2$s</xliff:g></string>
+    <string name="settings_anki_default">Varsayılan</string>
+    <string name="settings_anki_get_app_summary">AnkiDroid\'i Google Play\'den ücretsiz indirin</string>
+    <string name="settings_anki_grant_summary">AnkiDroid kullanmak için izin verin</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         SETTINGS — Text-to-Speech section
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="tts_voice_numbered">Ses <xliff:g id="voice_index" example="3">%1$d</xliff:g></string>
+
+    <string name="tts_voice_region_numbered"><xliff:g id="region" example="China">%1$s</xliff:g> <xliff:g id="region_index" example="2">%2$d</xliff:g></string>
+
+    <string name="tts_voice_default">Varsayılan</string>
+
+    <string name="tts_voice_default_subtitle">Motorun varsayılan sesi</string>
+
+    <string name="tts_voice_needs_download">İndirme gerekli</string>
+
+    <string name="tts_no_engine_row_subtitle">Kullanılabilir konuşma motoru yok. Eklemek için dokunun.</string>
+
+    <string name="tts_voice_picker_title">Ses</string>
+
+    <string name="tts_voices_section_header"><xliff:g id="language" example="JAPANESE">%1$s</xliff:g> SESLERİ</string>
+    <string name="tts_speed_title">Hız</string>
+
+    <string name="tts_no_engine_dialog_title">Metin Okuma Yok</string>
+
+    <string name="tts_no_engine_dialog_message">Sözcükleri sesli okumak için kullanılabilir bir metin okuma motoru yok. Bir tane yükleyin — veya cihazınızda zaten bir motor varsa, Android ayarlarından etkinleştirin.</string>
+
+    <string name="tts_no_engine_get_google">Google TTS\'yi Edin</string>
+
+    <string name="tts_no_engine_open_settings">TTS ayarlarını aç</string>
+
+    <string name="tts_language_unsupported_dialog_title">Dil Desteklenmiyor</string>
+
+    <string name="tts_language_unsupported_with_engine_message">Etkin motor <xliff:g id="engine_name" example="Google TTS">%1$s</xliff:g>, ancak <xliff:g id="source_language" example="Japanese">%2$s</xliff:g> dilini desteklemiyor.</string>
+
+    <string name="tts_language_unsupported_unknown_engine_message">Etkin metin okuma motoru <xliff:g id="source_language" example="Japanese">%1$s</xliff:g> dilini desteklemiyor.</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         SETTINGS — Quick Settings tile row
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="quick_tile_add_row_title">Hızlı Ayarlar kutucuğu ekle</string>
+
+    <string name="quick_tile_add_row_subtitle"><xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> uygulamasını durum çubuğunuzdan açıp kapatın</string>
+
+    <string name="quick_tile_added_row_subtitle">Hızlı Ayarlara eklendi</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         SETTINGS — Hotkeys section
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="hotkey_not_set_subtitle">Ayarlanmadı</string>
+
+    <string name="hotkey_section_translations">Çeviriler</string>
+
+    <string name="hotkey_show_translations_title">Çevirileri göstermek için basılı tutun</string>
+
+    <string name="hotkey_show_translations_dialog_title">Çevirileri Göster</string>
+
+    <string name="hotkey_auto_translation_title">Otomatik Çeviri modunu başlatmak/durdurmak için dokunun</string>
+
+    <string name="hotkey_auto_translation_dialog_title">Otomatik Çeviri</string>
+
+    <string name="hotkey_capture_screen_title">Ekranı yakalamak için dokunun</string>
+
+    <string name="hotkey_capture_screen_dialog_title">Ekranı Yakala</string>
+
+    <string name="hotkey_show_hint_title"><xliff:g id="hint_label" example="Furigana">%1$s</xliff:g> göstermek için basılı tutun</string>
+
+    <string name="hotkey_show_hint_dialog_title"><xliff:g id="hint_label" example="Furigana">%1$s</xliff:g> Göster</string>
+
+    <string name="hotkey_auto_hint_title">Otomatik <xliff:g id="hint_label" example="Furigana">%1$s</xliff:g> modunu başlatmak/durdurmak için dokunun</string>
+
+    <string name="hotkey_auto_hint_dialog_title">Otomatik <xliff:g id="hint_label" example="Furigana">%1$s</xliff:g></string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         SETTINGS — Capture Display section
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="capture_display_row_label">Ekran <xliff:g id="display_id" example="0">%1$d</xliff:g>  —  <xliff:g id="display_name" example="Built-in screen">%2$s</xliff:g></string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         SETTINGS — Online Translations (cooldown / unavailable states)
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="backend_status_unavailable_default">Kullanılamıyor</string>
+
+    <string name="backend_cooldown_retry_at">Yeniden deneme saati:</string>
+
+    <string name="backend_cooldown_retry_on">Yeniden deneme tarihi:</string>
+
+    <string name="backend_cooldown_status_fmt"><xliff:g id="description" example="Rate limited">%1$s</xliff:g> · <xliff:g id="retry_word" example="Retry at">%2$s</xliff:g> <xliff:g id="retry_time" example="3:42 PM">%3$s</xliff:g></string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         SETTINGS — Anki rows + deck/card-type fallback labels
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="anki_deck_not_selected_subtitle">Seçilmedi</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         SETTINGS — Support section
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="settings_support_discord_title"><xliff:g id="brand_discord" example="Discord">Discord</xliff:g>\'a Katıl</string>
+
+    <string name="settings_support_discord_subtitle">Yardım alın ve diğer oyuncularla sohbet edin.</string>
+
+    <string name="settings_support_donate_title">PlayTranslate\'i Destekle</string>
+
+    <string name="settings_support_donate_subtitle">Ücretsiz, açık kaynaklı bir gönül emeği. Devam etmesine yardımcı olun.</string>
+
+    <string name="settings_support_keep_running_title">Kaybolan simgeyi düzelt</string>
+
+    <string name="settings_support_keep_running_subtitle"><xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> kapatılmasın</string>
+
+    <string name="settings_support_report_bug_title">Hata bildir</string>
+
+    <string name="settings_support_report_bug_subtitle">Günlükleri desteğe e-postayla gönderin. Paylaşmak için basılı tutun.</string>
+
+    <string name="settings_support_report_bug_email_subject"><xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> hata raporu – v<xliff:g id="version" example="2.2.0">%1$s</xliff:g></string>
+
+    <string name="settings_support_report_bug_email_body">Ne oldu?\n\n(Ne yaptığınızı ve neyin ters gittiğini açıklayın.)\n\nCihaz bilgileri ve son günlükler ektedir.</string>
+
+    <string name="settings_support_report_bug_chooser_title">Hata raporunu gönder</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         KILL NOTICE
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="kill_notice_title">Android, <xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> uygulamasını kapattı</string>
+
+    <string name="kill_notice_body_memory">Belleği azalan telefonunuz, <xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> açıkken uygulamayı kapattı. Kayan simgenin kaybolmasının nedeni budur.</string>
+
+    <string name="kill_notice_body_other">Telefonunuz, <xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> açıkken uygulamayı kapattı. Kayan simgenin kaybolmasının nedeni budur. Bazı telefonlar bunu pil tasarrufu için yapar.</string>
+
+    <string name="kill_notice_body_stopped"><xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> açıkken durduruldu. Uygulamayı kendiniz durdurmadıysanız telefonunuzun pil veya bellek yöneticisi durdurmuş olabilir. Kayan simgenin kaybolmasının nedeni budur.</string>
+
+    <string name="kill_notice_restored">Simge şu anda yeniden ekranda.</string>
+
+    <string name="kill_notice_see_options">Seçenekleri gör</string>
+
+    <string name="kill_notice_not_now">Şimdi değil</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         KEEP RUNNING PAGE
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="keep_running_title">Kaybolan simgeyi düzelt</string>
+
+    <string name="keep_running_intro">Bu ayarlar, oyun oynarken telefonunuzun <xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> uygulamasını kapatma olasılığını azaltır.</string>
+
+    <string name="keep_running_empty">Önerilen başka ayar yok. Sorun devam ediyorsa lütfen sorunu yeniden oluşturun ve ardından hata bildirin.</string>
+
+    <string name="keep_running_battery_title"><xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> uygulamasının her zaman arka planda çalışmasına izin ver</string>
+
+    <string name="keep_running_battery_line">Telefonunuz <xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> uygulamasını kapatırsa bu ayar sayesinde uygulama kendiliğinden yeniden başlayabilir.</string>
+
+    <string name="keep_running_accessibility_title">Erişilebilirlik modunu kullan</string>
+
+    <string name="keep_running_accessibility_line"><xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> uygulamasını, bellek temizliğinin nadiren dokunduğu bir erişilebilirlik hizmeti önceliğiyle çalıştırır.</string>
+
+    <string name="keep_running_accessibility_restart_line">Android, hizmeti durdurdu ve kendiliğinden yeniden başlatmayacak. Erişilebilirlik ayarlarından hizmeti kapatıp yeniden açın.</string>
+
+    <string name="keep_running_tile_title">Hızlı Ayarlar kutucuğu ekle</string>
+
+    <string name="keep_running_tile_line"><xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> uygulamasını her ekrandan yeniden açabilirsiniz.</string>
+
+    <string name="keep_running_screen_unavailable">O ekran telefonunuzda kullanılamıyor. Bunun yerine ayarı Ayarlar uygulamasında arayın.</string>
+
+    <string name="keep_running_xiaomi_autostart_title">Otomatik başlatmaya izin ver</string>
+
+    <string name="keep_running_xiaomi_autostart_line">Ayarlarda otomatik başlatmayı arayın ve <xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> için izin verin. Bu izin verilmezse Xiaomi, <xliff:g id="app_name2" example="PlayTranslate">PlayTranslate</xliff:g> uygulamasının kapatıldıktan sonra yeniden başlamasını engelleyebilir.</string>
+
+    <string name="keep_running_xiaomi_battery_title">Pil kullanımını “Kısıtlama yok” olarak ayarla</string>
+
+    <string name="keep_running_xiaomi_battery_line"><xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> uygulamasının sistem ayarlarında pil ayarına (sürümünüze göre Pil tasarrufu, Pil veya Güç) dokunun ve “Kısıtlama yok” seçeneğini seçin.</string>
+
+    <string name="keep_running_xiaomi_lock_title"><xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> uygulamasını Son uygulamalar ekranında kilitle</string>
+
+    <string name="keep_running_xiaomi_lock_line">Son uygulamalar ekranını açın, <xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> kartını basılı tutun ve kilide dokunun. Bazı sürümlerde bunun yerine kartı aşağı çekin.</string>
+
+    <string name="keep_running_huawei_app_launch_title">Uygulama başlatmayı manuel olarak yönet</string>
+
+    <string name="keep_running_huawei_app_launch_line">Ayarlarda Uygulama başlatmayı arayın, <xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> için “Otomatik olarak yönetiliyor” seçeneğini kapatın, ardından Oto-başlatma, İkincil başlatma ve Arka planda çalışma seçeneklerini açın.</string>
+
+    <string name="keep_running_oppo_auto_launch_title">Otomatik başlatmaya ve arka plan etkinliğine izin ver</string>
+
+    <string name="keep_running_oppo_auto_launch_line">Ayarlarda otomatik başlatmayı arayın ve <xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> için izin verin, ardından uygulamanın pil ayarlarında arka plan etkinliğine de izin verin. Bunlara izin verilmezse telefon, <xliff:g id="app_name2" example="PlayTranslate">PlayTranslate</xliff:g> uygulamasını arka planda durdurabilir veya yeniden başlamasını engelleyebilir.</string>
+
+    <string name="keep_running_vivo_autostart_title">Otomatik başlatmaya ve arka planda güç tüketimine izin ver</string>
+
+    <string name="keep_running_vivo_autostart_line">Ayarlarda otomatik başlatmayı arayın ve <xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> için izin verin, ardından Pil ayarlarında arka planda yüksek güç tüketimine de izin verin. Bunlara izin verilmezse telefon, <xliff:g id="app_name2" example="PlayTranslate">PlayTranslate</xliff:g> uygulamasını arka planda durdurabilir veya yeniden başlamasını engelleyebilir.</string>
+
+    <string name="keep_running_samsung_never_sleeping_title">“Hiç oto. uykuya geçirilmeyen uygulamalar” listesine ekle</string>
+
+    <string name="keep_running_samsung_never_sleeping_line">Pil ayarlarında, Arka plan kullanım sınırları bölümünde <xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> uygulamasını “Hiç oto. uykuya geçirilmeyen uygulamalar” listesine ekleyin. Samsung, birkaç gün boyunca kullanıldığını görmediği uygulamaları uyku moduna alır ve arka planda yapabileceklerini sınırlar.</string>
+
+    <string name="settings_support_check_updates_title">Güncellemeleri denetle</string>
+
+    <string name="settings_support_check_updates_title_available">Güncelleme mevcut</string>
+
+    <string name="settings_support_check_updates_subtitle">Geçerli sürüm: <xliff:g id="version" example="2.4.1">%1$s</xliff:g></string>
+
+    <string name="settings_support_check_updates_checking">Güncellemeler denetleniyor…</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         SETTINGS — Debug section
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="settings_debug_force_single_screen">Tek ekranı zorla</string>
+    <string name="settings_debug_show_ocr_boxes">OCR kutularını göster</string>
+    <string name="settings_debug_show_detection_log">Algılama günlüğünü göster</string>
+    <string name="settings_debug_log_pinhole">Canlı mod iğne deliği ölçümlerini günlüğe kaydet</string>
+    <string name="settings_debug_save_ocr_seed">OCR yakalamalarını tohum olarak kaydet</string>
+    <string name="settings_debug_short_text_routing">Kısa metinler için çevrimdışı yönlendirme</string>
+    <string name="settings_debug_force_mmap_weights">Ağırlık yüklemeyi mmap ile zorla (cihaz üzerindeki LLM)</string>
+    <string name="settings_debug_log_grouping">OCR gruplama kararlarını günlüğe kaydet</string>
+    <string name="settings_debug_angle_gate">Klasik açı eşiği (10°)</string>
+    <string name="settings_debug_log_trace">Çeviri günlüğü izini kaydet</string>
+    <string name="settings_debug_force_crash_title">Çökmeyi zorla</string>
+    <string name="dictionary_screen_title">Sözlük</string>
+    <string name="dictionary_search_hint">Sözcükleri ara</string>
+    <string name="dictionary_clear_query">Temizle</string>
+    <plurals name="dictionary_entries_count">
+        <item quantity="one"><xliff:g id="count" example="1">%d</xliff:g> giriş</item>
+        <item quantity="other"><xliff:g id="count" example="5">%d</xliff:g> giriş</item>
+    </plurals>
+    <string name="dictionary_lang_pair"><xliff:g id="source" example="Japanese">%1$s</xliff:g> → <xliff:g id="target" example="English">%2$s</xliff:g></string>
+    <string name="dictionary_status_no_results">Sonuç yok</string>
+    <string name="dictionary_status_error">Aranamadı</string>
+
+    <string name="settings_debug_export_logs_subject"><xliff:g id="app_name" example="PlayTranslate">PlayTranslate</xliff:g> günlükleri</string>
+
+    <string name="settings_debug_export_logs_failed">Günlükler dışa aktarılamadı: <xliff:g id="exception_class" example="FileNotFoundException">%1$s</xliff:g></string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         GENERIC TOASTS
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <string name="toast_link_copied">Bağlantı kopyalandı</string>
+
+    <string name="toast_copied">Kopyalandı</string>
+
+    <string name="toast_no_logs_to_share">Paylaşılacak günlük yok</string>
+
+    <string name="toast_no_crash_report">Gönderilecek çökme raporu yok</string>
+
+    <string name="share_chooser_share_logs">Günlükleri paylaş</string>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         AUDIO SOURCES
+         ═══════════════════════════════════════════════════════════════ -->
+    <string name="audio_source_tts_name">Metin okuma</string>
+    <string name="audio_source_commons_name">Wikimedia Commons</string>
+    <string name="audio_no_results">Sonuç yok</string>
+    <string name="audio_source_picker_title">Ses</string>
+    <string name="audio_loading">Yükleniyor…</string>
+    <string name="audio_error_loading">Yüklenemedi</string>
+
+    <string name="process_text_translation_failed">Seçilen metin çevrilemedi. Bağlantınızı veya dil ayarlarınızı kontrol edin.</string>
+
+    <!-- Part-of-speech labels (universal categories); see values/strings.xml. -->
+    <string name="pos_noun">İsim</string>
+    <string name="pos_pronoun">Zamir</string>
+    <string name="pos_verb">Fiil</string>
+    <string name="pos_adjective">Sıfat</string>
+    <string name="pos_adverb">Zarf</string>
+    <string name="pos_particle">Edat</string>
+    <string name="pos_conjunction">Bağlaç</string>
+    <string name="pos_interjection">Ünlem</string>
+    <string name="pos_preposition">İlgeç</string>
+    <string name="pos_postposition">Sontakı</string>
+    <string name="pos_determiner">Belirleyici</string>
+    <string name="pos_article">Tanımlık</string>
+    <string name="pos_prefix">Ön ek</string>
+    <string name="pos_suffix">Son ek</string>
+    <string name="pos_counter">Sayma sözcüğü</string>
+    <string name="pos_numeral">Sayı</string>
+    <string name="pos_expression">İfade</string>
+    <string name="pos_phrase">Öbek</string>
+    <string name="pos_proverb">Atasözü</string>
+    <string name="pos_abbreviation">Kısaltma</string>
+    <string name="pos_contraction">Kısaltılmış biçim</string>
+    <string name="pos_auxiliary">Yardımcı fiil</string>
+
+    <!-- Misc register/usage tags shown under a word's definition; see values/strings.xml. -->
+    <string name="misc_kana_only">Yalnızca kana</string>
+    <string name="misc_kanji_only">Yalnızca kanji</string>
+    <string name="misc_colloquial">Konuşma dili</string>
+    <string name="misc_informal">Teklifsiz</string>
+    <string name="misc_formal">Resmî</string>
+    <string name="misc_literary">Edebî</string>
+    <string name="misc_honorific">Saygı dili</string>
+    <string name="misc_humble">Tevazu dili</string>
+    <string name="misc_polite">Nezaket dili</string>
+    <string name="misc_familiar">Senli benli</string>
+    <string name="misc_endearing">Sevgi sözcüğü</string>
+    <string name="misc_childrens">Çocuk dili</string>
+    <string name="misc_female_speech">Kadın dili</string>
+    <string name="misc_male_speech">Erkek dili</string>
+    <string name="misc_archaic">Arkaik</string>
+    <string name="misc_obsolete">Eskimiş</string>
+    <string name="misc_dated">Modası geçmiş</string>
+    <string name="misc_historical">Tarihsel</string>
+    <string name="misc_rare">Nadir</string>
+    <string name="misc_neologism">Yeni sözcük</string>
+    <string name="misc_slang">Argo</string>
+    <string name="misc_internet_slang">İnternet argosu</string>
+    <string name="misc_manga_slang">Manga argosu</string>
+    <string name="misc_idiomatic">Deyim</string>
+    <string name="misc_figurative">Mecaz</string>
+    <string name="misc_onomatopoeia">Yansıma</string>
+    <string name="misc_poetic">Şiirsel</string>
+    <string name="misc_humorous">Şaka yollu</string>
+    <string name="misc_derogatory">Aşağılayıcı</string>
+    <string name="misc_offensive">Kırıcı</string>
+    <string name="misc_vulgar">Kaba</string>
+    <string name="misc_slur">Hakaret</string>
+    <string name="misc_sensitive">Hassas</string>
+    <string name="misc_euphemistic">Örtmece</string>
+    <string name="misc_sarcastic">Alay yollu</string>
+    <string name="misc_nonstandard">Standart dışı</string>
+    <string name="misc_yojijukugo">Dört karakterli kalıp</string>
+    <string name="misc_dialectal">Yöresel</string>
+
+    <string name="inflection_causative">Ettirgen</string>
+    <string name="inflection_passive">Edilgen</string>
+    <string name="inflection_potential">Yeterlilik</string>
+    <string name="inflection_potential_or_passive">Yeterlilik/Edilgen</string>
+    <string name="inflection_continuative">Bağlayıcı biçim</string>
+    <string name="inflection_negative">Olumsuz</string>
+    <string name="inflection_volitional">Niyet</string>
+    <string name="inflection_imperative">Emir</string>
+    <string name="inflection_more">+<xliff:g id="count" example="2">%1$d</xliff:g> daha</string>
+</resources>

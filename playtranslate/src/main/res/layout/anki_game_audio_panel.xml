@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Inline game-audio editing panel inside the sentence card's Original
+     group: the trim waveform, nothing else — playback lives on the row's
+     preview chip above. On Save, never-reviewed audio scrolls this cell into
+     view and flashes it (rather than opening a full-screen editor). Shown
+     only while the sentence audio source is the game recording. 24dp
+     horizontal padding keeps handles clear of the system back-gesture zones
+     even inside the sheet. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingHorizontal="24dp"
+    android:paddingBottom="6dp">
+
+    <com.playtranslate.ui.WaveformTrimView
+        android:id="@+id/waveInline"
+        android:layout_width="match_parent"
+        android:layout_height="80dp"
+        android:layout_marginTop="4dp" />
+
+    <!-- Pinch is the one gesture with no visual affordance (the handles show
+         themselves, a body drag is discoverable by accident). Not clickable,
+         so touches here fall through to the panel's listener and reach the
+         waveform like any other part of the cell. -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:gravity="center_horizontal"
+        android:text="@string/game_audio_zoom_hint"
+        android:textColor="?attr/ptTextHint"
+        android:textSize="11sp" />
+
+</LinearLayout>

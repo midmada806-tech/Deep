@@ -1,0 +1,85 @@
+# PlayTranslate dependencies (merged from playtranslate-3.4.1/gradle/libs.versions.toml).
+# Exposed in Gradle as `ptlibs`. Shared AndroidX/Material/Lifecycle versions are pinned to Noctis' own.
+[versions]
+coreKtx = "1.15.0"
+appcompat = "1.7.0"
+material = "1.12.0"
+constraintlayout = "2.2.1"
+lifecycle = "2.8.7"
+coroutines = "1.11.0"
+mlkitTextRecognitionJapanese = "16.0.1"
+mlkitTextRecognition = "16.0.1"
+mlkitTranslate = "17.0.3"
+mlkitLanguageId = "17.0.6"
+hanlp = "portable-1.8.4"
+lucene = "8.11.4"
+komoran = "3.3.9"
+mlkitTextRecognitionChinese = "16.0.1"
+mlkitTextRecognitionKorean = "16.0.1"
+mlkitTextRecognitionDevanagari = "16.0.1"
+okhttp = "5.4.0"
+gson = "2.14.0"
+# kotlinx-serialization RUNTIME is versioned independently from the Kotlin
+# plugin (which is version.ref = "kotlin"). Pin the runtime explicitly.
+kotlinxSerialization = "1.9.0"
+recyclerview = "1.4.0"
+activityKtx = "1.10.1"
+fragmentKtx = "1.8.9"
+sudachi = "0.7.4"
+sqliteJdbc = "3.53.1.0"
+junit = "4.13.2"
+robolectric = "4.16.1"
+opencv = "4.13.0"
+opencc4j = "1.13.1"
+camerax = "1.4.2"
+androidxTestCore = "1.7.0"
+androidxTestExtJunit = "1.3.0"
+androidxTestRunner = "1.7.0"
+androidxTestRules = "1.7.0"
+
+[libraries]
+androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
+material = { group = "com.google.android.material", name = "material", version.ref = "material" }
+androidx-constraintlayout = { group = "androidx.constraintlayout", name = "constraintlayout", version.ref = "constraintlayout" }
+androidx-recyclerview = { group = "androidx.recyclerview", name = "recyclerview", version.ref = "recyclerview" }
+androidx-lifecycle-viewmodel-ktx = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-ktx", version.ref = "lifecycle" }
+androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycle" }
+androidx-activity-ktx = { group = "androidx.activity", name = "activity-ktx", version.ref = "activityKtx" }
+androidx-fragment-ktx = { group = "androidx.fragment", name = "fragment-ktx", version.ref = "fragmentKtx" }
+kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
+mlkit-text-recognition-japanese = { group = "com.google.mlkit", name = "text-recognition-japanese", version.ref = "mlkitTextRecognitionJapanese" }
+mlkit-text-recognition = { group = "com.google.mlkit", name = "text-recognition", version.ref = "mlkitTextRecognition" }
+mlkit-translate = { group = "com.google.mlkit", name = "translate", version.ref = "mlkitTranslate" }
+mlkit-language-id = { group = "com.google.mlkit", name = "language-id", version.ref = "mlkitLanguageId" }
+hanlp = { group = "com.hankcs", name = "hanlp", version.ref = "hanlp" }
+lucene-analyzers-common = { group = "org.apache.lucene", name = "lucene-analyzers-common", version.ref = "lucene" }
+lucene-core = { group = "org.apache.lucene", name = "lucene-core", version.ref = "lucene" }
+sqlite-jdbc = { group = "org.xerial", name = "sqlite-jdbc", version.ref = "sqliteJdbc" }
+komoran = { group = "com.github.shin285", name = "KOMORAN", version.ref = "komoran" }
+mlkit-text-recognition-chinese = { group = "com.google.mlkit", name = "text-recognition-chinese", version.ref = "mlkitTextRecognitionChinese" }
+mlkit-text-recognition-korean = { group = "com.google.mlkit", name = "text-recognition-korean", version.ref = "mlkitTextRecognitionKorean" }
+mlkit-text-recognition-devanagari = { group = "com.google.mlkit", name = "text-recognition-devanagari", version.ref = "mlkitTextRecognitionDevanagari" }
+okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
+gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
+kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
+sudachi = { group = "com.worksap.nlp", name = "sudachi", version.ref = "sudachi" }
+junit = { group = "junit", name = "junit", version.ref = "junit" }
+robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
+androidx-test-core = { group = "androidx.test", name = "core", version.ref = "androidxTestCore" }
+androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxTestExtJunit" }
+androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidxTestRunner" }
+androidx-test-rules = { group = "androidx.test", name = "rules", version.ref = "androidxTestRules" }
+kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
+# OpenCV — DBNet postprocessing (findContours/minAreaRect) + crop rectification
+# (warpPerspective) for the PaddleOCR spike. androidTest-only; never in the app APK.
+opencv = { group = "org.opencv", name = "opencv", version.ref = "opencv" }
+# CameraX — camera tool (Settings → Tools → Camera): full-page preview +
+# analysis frames for the keyframe-OCR/tracking pipeline.
+camerax-core = { group = "androidx.camera", name = "camera-core", version.ref = "camerax" }
+camerax-camera2 = { group = "androidx.camera", name = "camera-camera2", version.ref = "camerax" }
+camerax-lifecycle = { group = "androidx.camera", name = "camera-lifecycle", version.ref = "camerax" }
+camerax-view = { group = "androidx.camera", name = "camera-view", version.ref = "camerax" }
+# OpenCC (Simplified<->Traditional Chinese, phrase-aware) for render-time
+# conversion of Traditional Chinese target output. Apache-2.0, pure-JVM.
+opencc4j = { group = "com.github.houbb", name = "opencc4j", version.ref = "opencc4j" }

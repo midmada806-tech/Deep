@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Yomitan dictionary list row: drag handle · title/description · delete.
+     Mirrors item_region_row's edit-mode affordances; lives inside a
+     MaterialCardView so it paints only its ripple + in-card divider. -->
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    tools:ignore="Overdraw">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:minHeight="@dimen/pt_row_min_height"
+        android:paddingHorizontal="@dimen/pt_row_h_padding">
+
+        <ImageView
+            android:id="@+id/yomitanDragHandle"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:layout_marginEnd="12dp"
+            android:src="@drawable/ic_drag_handle"
+            app:tint="?attr/ptTextHint"
+            android:scaleType="center"
+            android:contentDescription="@string/cd_drag_to_reorder" />
+
+        <!-- The tap target for opening the metadata detail page: spans the accent
+             dot + title/subtitle and the full row height, but stays scoped
+             between the drag handle and the delete button so it never overlaps
+             them. paddingVertical lives here (not on the row) so the entire
+             height is tappable. Height is wrap_content with a minHeight floor,
+             NOT match_parent: this is a 0dp/weight child, which LinearLayout
+             skips in its first measure pass, so match_parent resolved against
+             the min-height row and clipped a two-line subtitle. wrap_content
+             always measures the full text; minHeight makes a single-line row
+             fill the whole row so all of it stays tappable. -->
+        <LinearLayout
+            android:id="@+id/yomitanRowContent"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:minHeight="@dimen/pt_row_min_height"
+            android:paddingVertical="@dimen/pt_row_v_padding"
+            android:background="?attr/selectableItemBackground">
+
+            <!-- Per-dictionary accent dot; color set by the adapter (the override,
+                 or the subtitle text color by default). -->
+            <View
+                android:id="@+id/yomitanColorDot"
+                android:layout_width="10dp"
+                android:layout_height="10dp"
+                android:layout_marginEnd="12dp"
+                android:importantForAccessibility="no" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/tvYomitanTitle"
+                    style="@style/Text.PT.RowTitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:singleLine="true"
+                    android:ellipsize="end" />
+
+                <TextView
+                    android:id="@+id/tvYomitanSubtitle"
+                    style="@style/Text.PT.RowSubtitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:maxLines="2"
+                    android:ellipsize="end"
+                    android:visibility="gone" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <ImageView
+            android:id="@+id/btnYomitanDelete"
+            android:layout_width="44dp"
+            android:layout_height="28dp"
+            android:layout_marginStart="4dp"
+            android:paddingHorizontal="10dp"
+            android:src="@drawable/ic_close"
+            app:tint="?attr/ptDanger"
+            android:scaleType="centerInside"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/cd_yomitan_delete" />
+
+    </LinearLayout>
+
+    <!-- In-card divider; GONE on the last row (set by the adapter). -->
+    <View
+        android:id="@+id/yomitanRowDivider"
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginStart="@dimen/pt_row_h_padding"
+        android:background="?attr/ptDivider" />
+
+</LinearLayout>

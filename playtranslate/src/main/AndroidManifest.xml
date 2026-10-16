@@ -1,0 +1,419 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.BIND_ACCESSIBILITY_SERVICE"
+        tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="com.ichi2.anki.permission.READ_WRITE_DATABASE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- Game-audio recording for Anki sentence cards: AudioPlaybackCapture on
+         the MediaProjection session — never the microphone. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Camera tool (Settings → Tools → Camera). Optional hardware, and the
+         BACK camera specifically: the tool is aimed at external text, and the
+         overlay mapping assumes an unmirrored preview — PreviewView mirrors
+         front-camera preview while analysis frames stay unmirrored, which
+         would flip every overlay. On devices without a back camera (e.g.
+         gaming handhelds) the Tools cell shows disabled with a reason, so
+         users still learn the tool exists; the activity double-checks. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- The one-tap "stop optimising battery for this app" dialog on the
+         Keep PlayTranslate running page (ACTION_REQUEST_IGNORE_BATTERY_
+         OPTIMIZATIONS; without the permission the system dialog closes
+         itself). Google Play allows this permission only when battery
+         optimisation adversely affects the app's core function, which it
+         does here: the capture session is closed in the background (field
+         reports 2026-10). A Play listing must declare that use. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+
+    <queries>
+        <package android:name="com.ichi2.anki" />
+        <!-- TextToSpeech engine services. Without this, API 30+ package
+             visibility hides TTS engines from the app, and TextToSpeech
+             reports no engine even when one is installed and active. -->
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+        <!-- Email clients. LogExporter.emailFiles asks resolveActivity whether
+             one is installed before offering the pre-addressed composer.
+             Starting the intent needs no declaration; the question does, or
+             API 30+ package visibility hides Gmail and the rest and the check
+             answers "none" on every phone. -->
+        <intent>
+            <action android:name="android.intent.action.SEND" />
+            <data android:mimeType="message/rfc822" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SEND_MULTIPLE" />
+            <data android:mimeType="message/rfc822" />
+        </intent>
+    </queries>
+
+    <!-- Self-exclusion from our own game-audio capture: excludeUid on the
+         capture config (GameAudioRecorder) is the load-bearing half — with
+         USAGE-MATCHING rules, our own tracks were matched by our own capture
+         policy mix while the opt-out flag barred them from entering it, and
+         the Thor routed them nowhere (G db = -inf on every output thread;
+         see reference_thor_audio_quirks). allowAudioPlaybackCapture=false is
+         defense-in-depth on top (keeps our audio out of third-party captures
+         and out of the ring if the usage-matching fallback ever fires) —
+         Thor-tested TOGETHER with excludeUid; if playback ever goes silent
+         on a quirky ROM, this flag is the first suspect to strip. -->
+    <application>
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.PlayTranslate"
+            android:resizeableActivity="true"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden">
+            <!-- No LAUNCHER filter: Noctis is the app; this screen is opened from More → PlayTranslate. -->
+        </activity>
+
+        <!-- Translucent trampoline: ensures the AnkiDroid permission, then
+             forwards to WordAnkiReviewActivity. Asks in place so a missing
+             permission never lands the user on a blank screen. -->
+        <activity
+            android:name=".ui.AnkiPermissionActivity"
+            android:exported="false"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden" />
+
+        <!-- Opaque host for the Anki word-review sheet, reached via
+             AnkiPermissionActivity. -->
+        <activity
+            android:name=".ui.WordAnkiReviewActivity"
+            android:exported="false"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
+            android:theme="@style/Theme.PlayTranslate" />
+
+        <!-- Opaque host for the Anki SENTENCE-review sheet, reached from the
+             over-game capture panel (a window that can't host the DialogFragment
+             directly). -->
+        <activity
+            android:name=".ui.SentenceAnkiReviewActivity"
+            android:exported="false"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
+            android:theme="@style/Theme.PlayTranslate" />
+
+        <!-- Standalone results host for region capture on single-screen / backgrounded. -->
+        <activity
+            android:name=".ui.TranslationResultActivity"
+            android:exported="false"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.PlayTranslate" />
+
+        <!-- Multi-step language selection wizard (source → target → download → confirm). -->
+        <activity
+            android:name=".ui.LanguageSetupActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
+            android:theme="@style/Theme.PlayTranslate" />
+
+        <!-- DeepL API key entry sub-screen (launched from Settings → Translation Service). -->
+        <activity
+            android:name=".ui.DeepLSettingsActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity"
+            android:theme="@style/Theme.PlayTranslate" />
+
+        <!-- Generic LLM backend (OpenAI / Gemini / future) settings sub-screen.
+             One Activity parameterized by EXTRA_BACKEND_ID. -->
+        <activity
+            android:name=".ui.LlmBackendSettingsActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity"
+            android:theme="@style/Theme.PlayTranslate" />
+
+        <!-- Full-screen model picker for LLM backends. Reached from the
+             "Model" row on the per-backend sub-screen above OR from the
+             inline "Model" cell under each enabled LLM row in Settings. -->
+        <activity
+            android:name=".ui.LlmModelPickerActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity"
+            android:theme="@style/Theme.PlayTranslate" />
+
+        <!-- LLM prompt-template editor (Advanced LLM Configuration). One
+             Activity parameterized by PromptKind, reached from the three
+             rows on the Translation services page. -->
+        <activity
+            android:name=".ui.LlmPromptEditorActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity"
+            android:theme="@style/Theme.PlayTranslate" />
+
+        <!-- Add-service picker: full list of online translation services;
+             launched from the Online card's "Add Online Translation
+             Service" row. -->
+        <activity
+            android:name=".ui.AddOnlineServiceActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity"
+            android:theme="@style/Theme.PlayTranslate" />
+
+        <!-- Per-language Text-to-Speech voice picker (launched from Settings → Text-to-Speech). -->
+        <activity
+            android:name=".ui.TtsVoiceActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity"
+            android:theme="@style/Theme.PlayTranslate" />
+
+        <!-- Multi-source audio picker for an Anki cell (Commons recordings + TTS voices). -->
+        <activity
+            android:name=".ui.AudioSourcePickerActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity"
+            android:theme="@style/Theme.PlayTranslate" />
+
+        <!-- Translucent trampoline for the RECORD_AUDIO grant, launched from
+             the floating workspace's audio picker page (an overlay window
+             can't run a runtime-permission request; the workspace parks
+             under this while the system dialog is up). -->
+        <activity
+            android:name=".ui.RecordAudioPermissionActivity"
+            android:exported="false"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden" />
+
+        <!-- Appearance sub-page (theme + accent), launched from Settings → Configure. -->
+        <activity
+            android:name=".ui.AppearanceSettingsActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity"
+            android:theme="@style/Theme.PlayTranslate" />
+
+        <!-- Dictionary lookup screen, launched from Settings → Tools. -->
+        <activity
+            android:name=".ui.DictionaryLookupActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity"
+            android:theme="@style/Theme.PlayTranslate"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".ui.TranslationHistoryActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity"
+            android:theme="@style/Theme.PlayTranslate" />
+
+        <!-- Camera tool, launched from Settings → Tools. Follows auto-rotate
+             via the standard recreation flow (no configChanges): rotation
+             rebuilds the camera + session so OCR always sees gravity-upright
+             text — a portrait lock fed the OCR sideways frames when users
+             naturally turned the phone for wide text, producing garbage
+             reads. Auto-rotate OFF still degrades sideways; the confidence
+             gate suppresses most of that output. -->
+        <activity
+            android:name=".camera.CameraActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity"
+            android:theme="@style/Theme.PlayTranslate" />
+
+        <!-- Import-image tool, launched from Settings → Tools and as a share
+             target: exported for ACTION_SEND (screenshot → Share →
+             PlayTranslate); SEND grants read on the streamed URI, so no
+             storage permission is involved. The review pins its own
+             orientation programmatically; the landing rotates freely. -->
+        <activity
+            android:name=".imageimport.ImageImportActivity"
+            android:exported="true"
+            android:parentActivityName=".MainActivity"
+            android:theme="@style/Theme.PlayTranslate">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+                <!-- PDFs share into the paged review. CBZ deliberately not a
+                     share target (archive mimes are unreliable in the wild);
+                     the file picker covers it. -->
+                <data android:mimeType="application/pdf" />
+            </intent-filter>
+        </activity>
+
+        <!-- Select-to-translate: the system text-selection toolbar's
+             "PlayTranslate" entry. Launched by other apps with the selected
+             string (PROCESS_TEXT runs in the CALLER's task), so: exported,
+             no affinity with our task, out of recents, and transparent — the
+             capture panel shows over the still-visible calling app. -->
+        <activity
+            android:name=".processtext.ProcessTextActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.PlayTranslate.Transparent">
+            <intent-filter>
+                <action android:name="android.intent.action.PROCESS_TEXT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
+
+        <!-- "Keep PlayTranslate running" (the settings that stop the phone
+             from closing the app while it is on), launched from Settings →
+             Support and from the kill notice. -->
+        <activity
+            android:name=".ui.KeepRunningActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity"
+            android:theme="@style/Theme.PlayTranslate" />
+
+        <!-- Hotkeys sub-page (QS tile + hotkeys), launched from Settings → Configure. -->
+        <activity
+            android:name=".ui.HotkeysSettingsActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity"
+            android:theme="@style/Theme.PlayTranslate" />
+
+        <!-- Floating-icon gesture picker (drag / hold / tap bindings), launched
+             from the "On the floating icon" cell at the top of Settings. -->
+        <activity
+            android:name=".ui.IconGesturesSettingsActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity"
+            android:theme="@style/Theme.PlayTranslate" />
+
+        <!-- Capture & overlay sub-page (OCR / display / auto-translate), launched from Settings → Configure. -->
+        <activity
+            android:name=".ui.CaptureOverlaySettingsActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
+            android:theme="@style/Theme.PlayTranslate" />
+
+        <!-- Anki Flashcards sub-page (deck / card-type / mapping), launched from Settings → Configure. -->
+        <activity
+            android:name=".ui.AnkiSettingsActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity"
+            android:theme="@style/Theme.PlayTranslate" />
+
+        <!-- Translation services sub-page (online + offline backends), launched from Settings → Configure. -->
+        <activity
+            android:name=".ui.TranslationServicesActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
+            android:theme="@style/Theme.PlayTranslate" />
+
+        <!-- Yomitan dictionary import sub-page, launched from Settings → Configure. -->
+        <activity
+            android:name=".ui.YomitanSettingsActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
+            android:theme="@style/Theme.PlayTranslate" />
+
+        <!-- Read-only metadata detail for an installed Yomitan dictionary, opened
+             by tapping a dictionary row on the Yomitan page. -->
+        <activity
+            android:name=".ui.YomitanDictionaryDetailActivity"
+            android:exported="false"
+            android:parentActivityName=".ui.YomitanSettingsActivity"
+            android:theme="@style/Theme.PlayTranslate" />
+
+        <!-- Transparent host for the MediaProjection consent dialog. -->
+        <activity
+            android:name=".capture.MediaProjectionConsentActivity"
+            android:exported="false"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden" />
+
+        <!-- Translucent hop for the Quick Settings tile's turn-on tap: the tile
+             launches it through startActivityAndCollapse so the shade closes,
+             and it performs the activation and finishes at once. -->
+        <activity
+            android:name=".TileActivateActivity"
+            android:exported="false"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden" />
+
+        <!-- Foreground service that owns the OCR + translation pipeline. -->
+        <service
+            android:name=".CaptureService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse|mediaProjection">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="OCR and translation pipeline using AccessibilityService screen capture" />
+        </service>
+
+        <!-- FileProvider to share screenshot cache files with AnkiDroid -->
+        <provider
+            android:name=".PtFileProvider"
+            android:authorities="com.playtranslate.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_provider_paths" />
+        </provider>
+
+        <!--
+            AccessibilityService used solely to call takeScreenshot(displayId).
+            This lets us capture the game display (top screen) without any UI,
+            focus change, or MediaProjection — the app stays on the bottom screen.
+            User must enable once in Settings → Accessibility → PlayTranslate.
+        -->
+        <service
+            android:name=".PlayTranslateAccessibilityService"
+            android:enabled="@bool/accessibility_service_enabled"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+
+        <!--
+            Quick Settings tile that toggles the floating overlay icon.
+            ACTIVE_TILE lets external pref-write sites push the tile state via
+            TileService.requestListeningState even when the shade isn't open.
+        -->
+        <service
+            android:name=".PlayTranslateTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_qs_tile"
+            android:label="@string/tile_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.ACTIVE_TILE"
+                android:value="true" />
+        </service>
+
+    </application>
+
+</manifest>

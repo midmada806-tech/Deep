@@ -1,0 +1,60 @@
+package com.playtranslate.translation.gemma
+
+import com.playtranslate.translation.llm.LlmPromptTemplates
+
+/**
+ * Gemma 4 chat-template envelope for the MNN-backed E2B translator.
+ *
+ * The prompt *content* (system prose + user-turn prose) lives in
+ * [LlmPromptTemplates] — shared with the Qwen template and the cloud
+ * backends, and user-editable via the Advanced LLM Configuration
+ * settings. This object owns only the Gemma 4 envelope.
+ *
+ * Gemma 4 uses `<|turn>` / `<turn|>` role markers with the role name baked
+ * into the opening marker (system / user / model) — distinct from both
+ * Gemma 3's `<start_of_turn>{role}` form and Qwen's `<|im_start|>{role}`
+ * form. Pulled verbatim from `regist_gemma4()` in the MNN converter's
+ * `llmexport.py:108-113` (the converter's hardcoded jinja template):
+ *
+ *   <bos><|turn>system\n{system}<turn|>\n<|turn>user\n{user}<turn|>\n
+ *   <|turn>model\n{assistant}<turn|>\n…<|turn>model\n   (gen prompt)
+ *
+ * Tokenizer treats `<bos>`, `<|turn>`, and `<turn|>` as special tokens.
+ * EOS is `<turn|>`; MNN's stop-token logic picks this up from the shipped
+ * `llm_config.json` (`jinja.eos`). Mirrors
+ * [com.playtranslate.translation.qwen.QwenChatTemplate] but for Gemma 4's
+ * distinct markers; spike confirmed both load + generate cleanly on Thor.
+ */
+object GemmaE2BChatTemplate {
+    /** Plain system content. Caller wraps with `<|turn>system\n…<turn|>` markers. */
+    fun systemPrompt(source: String, target: String): String =
+        LlmPromptTemplates.systemPrompt(source, target)
+
+    /** Plain user-turn body. [includeContext] is carried rather than hardcoded
+     *  so that a future online Gemma backend could not silently *lose* the
+     *  context feature; every caller today is MNN and passes false. */
+    fun userMessage(text: String, source: String, target: String, includeContext: Boolean): String =
+        LlmPromptTemplates.translationUserMessage(text, source, target, includeContext)
+
+    /**
+     * Full system block: `<bos><|turn>system\n{system}<turn|>\n`. `<bos>` is
+     * prepended to the first system block only; [com.playtranslate.translation.mnn.MnnTranslator]
+     * caches the produced system block and reuses it across translations
+     * until the block text changes (language pair or prompt edit), so
+     * including `<bos>` once here is correct. With `use_template:false` in
+     * the MNN config, the tokenizer does not auto-prepend a `<bos>` token,
+     * so this is the only place the marker appears.
+     */
+    fun systemBlock(source: String, target: String): String =
+        "<bos><|turn>system\n${systemPrompt(source, target)}<turn|>\n"
+
+    /**
+     * Full user turn + model role-open: `<|turn>user\n{user}<turn|>\n<|turn>model\n`.
+     * The trailing `<|turn>model\n` (no closing `<turn|>`) is the generation
+     * prompt — the model continues from there and emits `<turn|>` itself as
+     * EOS, where MNN's stop-token logic terminates the response.
+     */
+    fun userBlock(text: String, source: String, target: String): String =
+        "<|turn>user\n${userMessage(text, source, target, includeContext = false)}" +
+            "<turn|>\n<|turn>model\n"
+}

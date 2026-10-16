@@ -1,0 +1,165 @@
+package com.playtranslate.ui
+
+import android.content.DialogInterface
+import android.os.Bundle
+import android.view.Display
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import android.widget.Button
+import android.widget.EditText
+import androidx.fragment.app.DialogFragment
+import com.playtranslate.PlayTranslateAccessibilityService
+import com.playtranslate.capture.CaptureBackendResolver
+import com.playtranslate.Prefs
+import com.playtranslate.RegionEntry
+import com.playtranslate.R
+import com.playtranslate.applyAccentOverlay
+import com.playtranslate.applyDialogEdgeToEdge
+import com.playtranslate.fullScreenDialogTheme
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+
+class AddCustomRegionSheet : DialogFragment() {
+
+    var gameDisplay: Display? = null
+    var onRegionAdded: ((RegionEntry) -> Unit)? = null
+    var onRegionEdited: ((RegionEntry) -> Unit)? = null
+    var onDismissed: (() -> Unit)? = null
+    /** Invoked instead of [onDismissed] when "Translate Once" is tapped. */
+    var onTranslateOnce: ((RegionEntry) -> Unit)? = null
+
+    private var initRegionEntry: RegionEntry? = null
+    private var editIndex: Int = -1
+
+    private val isEditMode get() = initRegionEntry != null && editIndex >= 0
+
+    /** Prepopulate the drag overlay with [region]'s bounds.
+     *  Pass [editIndex] to enable edit mode (save in place instead of adding). */
+    fun initRegion(region: RegionEntry, editIndex: Int = -1) {
+        this.initRegionEntry = region
+        this.editIndex = editIndex
+    }
+
+    private var topFraction    = 0.25f
+    private var bottomFraction = 0.75f
+    private var leftFraction   = 0.25f
+    private var rightFraction  = 0.75f
+    private var translateOnceRequested = false
+
+    override fun getTheme(): Int = fullScreenDialogTheme(requireContext())
+
+    override fun onCreateDialog(savedInstanceState: Bundle?): android.app.Dialog {
+        val dialog = super.onCreateDialog(savedInstanceState)
+        applyAccentOverlay(dialog.context.theme, requireContext())
+        return dialog
+    }
+
+    override fun onCreateView(
+        inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
+    ): View = inflater.inflate(R.layout.sheet_add_custom_region, container, false)
+
+    override fun onStart() {
+        super.onStart()
+        dialog?.window?.apply {
+            setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            setWindowAnimations(R.style.AnimSlideBottom)
+            applyDialogEdgeToEdge(this, requireContext())
+        }
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        ViewCompat.setOnApplyWindowInsetsListener(view) { v, insets ->
+            val sys = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+            v.setPadding(sys.left, sys.top, sys.right, maxOf(sys.bottom, ime.bottom))
+            WindowInsetsCompat.CONSUMED
+        }
+
+        val tvTitle          = view.findViewById<android.widget.TextView>(R.id.tvCustomRegionTitle)
+        val etName           = view.findViewById<EditText>(R.id.etRegionName)
+        val btnSave          = view.findViewById<Button>(R.id.btnSaveCustomRegion)
+        val btnClose         = view.findViewById<View>(R.id.btnCloseCustomRegion)
+        val btnTranslateOnce = view.findViewById<View>(R.id.btnTranslateOnce)
+
+        val init = initRegionEntry
+        if (init != null) {
+            topFraction = init.top
+            bottomFraction = init.bottom
+            leftFraction = init.left
+            rightFraction = init.right
+            if (isEditMode) {
+                tvTitle.text = getString(R.string.custom_region_edit_title, init.displayName(requireContext()))
+                // Raw label, not displayName: an unnamed region shows the empty
+                // field's hint rather than pre-filling the generic default.
+                etName.setText(init.label)
+            }
+        }
+
+        gameDisplay?.let { display ->
+            CaptureBackendResolver.activeOverlayUi?.showRegionDragOverlay(
+                display, RegionEntry("", topFraction, bottomFraction, leftFraction, rightFraction)
+            ) { region ->
+                topFraction    = region.top
+                bottomFraction = region.bottom
+                leftFraction   = region.left
+                rightFraction  = region.right
+            }
+        }
+
+        btnSave.setOnClickListener {
+            // Empty stays empty: RegionEntry.displayName resolves an unnamed
+            // region to the localized "Capture region" at render time.
+            val label = etName.text.toString().trim()
+            val prefs = Prefs(requireContext())
+            val list  = prefs.getRegionList().toMutableList()
+            val existingId = initRegionEntry?.id
+            if (isEditMode && editIndex in list.indices && existingId != null) {
+                val updated = RegionEntry(label, topFraction, bottomFraction, leftFraction, rightFraction, id = existingId)
+                list[editIndex] = updated
+                prefs.setRegionList(list)
+                onRegionEdited?.invoke(updated)
+            } else {
+                val newEntry = RegionEntry(label, topFraction, bottomFraction, leftFraction, rightFraction)
+                list.add(newEntry)
+                prefs.setRegionList(list)
+                onRegionAdded?.invoke(newEntry)
+            }
+            CaptureBackendResolver.activeOverlayUi?.hideRegionDragOverlay()
+            dismiss()
+        }
+
+        btnTranslateOnce.setOnClickListener {
+            translateOnceRequested = true
+            CaptureBackendResolver.activeOverlayUi?.hideRegionDragOverlay()
+            dismiss()
+        }
+
+        btnClose.setOnClickListener {
+            CaptureBackendResolver.activeOverlayUi?.hideRegionDragOverlay()
+            dismiss()
+        }
+    }
+
+    /** App went to background — kill the overlay immediately so it doesn't get stuck. */
+    override fun onStop() {
+        CaptureBackendResolver.activeOverlayUi?.hideRegionDragOverlay()
+        super.onStop()
+        dismissAllowingStateLoss()
+    }
+
+    override fun onDismiss(dialog: DialogInterface) {
+        CaptureBackendResolver.activeOverlayUi?.hideRegionDragOverlay()
+        if (translateOnceRequested) {
+            onTranslateOnce?.invoke(RegionEntry("", topFraction, bottomFraction, leftFraction, rightFraction))
+        } else {
+            onDismissed?.invoke()
+        }
+        super.onDismiss(dialog)
+    }
+
+    companion object {
+        const val TAG = "AddCustomRegionSheet"
+    }
+}

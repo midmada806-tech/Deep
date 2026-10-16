@@ -1,0 +1,41 @@
+package com.playtranslate.ui
+
+/**
+ * Implemented by activities that host an embedded
+ * [WordDetailBottomSheet] and can supply the current sentence
+ * context for Anki export on demand. Replaces the timed push
+ * pipeline (`updateSentenceContext`) that previously fed shadow
+ * fields on the embedded sheet.
+ *
+ * The embedded sheet calls [currentSentenceContext] at Anki-button
+ * tap time. Implementations read live state (e.g. their
+ * [TranslationResultViewModel]) and fall back to launch-time intent
+ * extras when the live state hasn't settled yet.
+ */
+interface SentenceContextProvider {
+    fun currentSentenceContext(): SentenceContext
+}
+
+data class SentenceContext(
+    val original: String?,
+    val translation: String?,
+    val wordResults: Map<String, Triple<String, String, Int>>?,
+    /** Word → surface form, snapshotted atomically with
+     *  [wordResults]. Required for one-tap Anki sends so the card
+     *  doesn't pair the current sentence's words with stale surface
+     *  forms from a different sentence sitting in
+     *  [LastSentenceCache.surfaceForms]. Null when [wordResults] is
+     *  null OR when the host can't supply matching surfaces from the
+     *  same source. */
+    val surfaceForms: Map<String, String>? = null,
+    /** Word → pitch + frequencies, snapshotted atomically with
+     *  [wordResults] (same rationale as [surfaceForms]); feeds the
+     *  sentence-card pitch/frequency Anki fields. Null when unavailable. */
+    val wordEnrichment: Map<String, WordEnrichment>? = null,
+    /** The result's deferred-translation payload, snapshotted with
+     *  [original] (it is only meaningful alongside its own result's text).
+     *  Anki sends route it through the deferred completion so a
+     *  hidden-section capture's History rows fill instead of a bare
+     *  translateOnce leaving them null. Null when the result carries none. */
+    val pending: com.playtranslate.model.PendingTranslation? = null,
+)

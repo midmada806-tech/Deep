@@ -1,0 +1,415 @@
+package com.playtranslate.language
+
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import java.io.File
+
+/**
+ * Tests for [LanguagePackStore.staleInstalledPacks] — the launch-time
+ * staleness scan that drives the upgrade-prompt overlay.
+ *
+ * Reads the real bundled `langpack_catalog.json` (via Robolectric's asset
+ * pipeline) and writes fake on-disk manifests under
+ * `noBackupFilesDir/langpacks/<id>/manifest.json` to simulate various
+ * installed-pack states.
+ *
+ * The catalog's current state: `ja` has packVersion=5, additiveFromVersion=3.
+ * Any installed ja below v3 (v1 or v2) is below additiveFromVersion, so its
+ * upgrade is FORCE (pre-uninstall + clean reinstall) — the Sudachi cutover at
+ * ja-v3 is the boundary those packs can't cross additively. From v3 up it is a
+ * deferrable ADDITIVE swap: v3 -> v4 (the entry_id-index rebuild) and v4 -> v5
+ * (the ke_inf pass) each leave the user with a working pack throughout, because
+ * the app column-probes every field those versions added. The Wiktionary source
+ * packs are at packVersion=4 except `hi` at 5 (it shipped its forms[] upgrade
+ * ahead of the fleet) and `es`/`fi`, still at 3; `zh` is at 2 and target packs
+ * at 2 — all with additiveFromVersion=1, so every one of them upgrades
+ * additively.
+ */
+@RunWith(RobolectricTestRunner::class)
+class LanguagePackStoreStalenessTest {
+
+    private lateinit var ctx: Context
+    private lateinit var langpacksRoot: File
+
+    @Before fun setUp() {
+        ctx = ApplicationProvider.getApplicationContext()
+        langpacksRoot = LanguagePackStore.rootDir(ctx)
+        // Clean slate per-test so writeManifest in one test doesn't bleed
+        // into the next via Robolectric's persistent file system.
+        if (langpacksRoot.exists()) langpacksRoot.deleteRecursively()
+        langpacksRoot.mkdirs()
+    }
+
+    @Test fun `empty list when no packs installed`() {
+        val stale = LanguagePackStore.staleInstalledPacks(ctx)
+        assertTrue(
+            "Never-installed packs must NOT appear in stale list (per spec)",
+            stale.isEmpty(),
+        )
+    }
+
+    @Test fun `ja pack at v2 on disk vs catalog v3 (below additiveFromVersion=3) -- stale FORCE`() {
+        writeManifest("ja", packVersion = 2)
+        // additiveFromVersion=3 makes ja-v3 a forced upgrade: v2 is below the
+        // boundary, so it's FORCE (pre-uninstall + clean reinstall), not a
+        // deferrable additive swap. v2's dict.sqlite is schema-current, so this
+        // is the version-boundary FORCE, not a corruption FORCE.
+        writeJaSchemaCurrentDb()
+        val stale = LanguagePackStore.staleInstalledPacks(ctx)
+        val ja = stale.firstOrNull { it.catalogKey == "ja" }
+        assertNotNull("Expected ja pack to be flagged stale", ja)
+        assertEquals(PackKind.SOURCE, ja!!.kind)
+        assertEquals(SourceLangId.JA, ja.sourceLangId)
+        assertEquals(SourceLangId.JA, ja.sourceLangId!!.packId)
+        assertNull(ja.targetLangCode)
+        assertEquals(
+            "v2 on disk < additiveFromVersion=3 → FORCE (forced upgrade)",
+            UpgradeMode.FORCE, ja.upgradeMode,
+        )
+    }
+
+    @Test fun `ja pack at v1 on disk vs catalog v3 (below additiveFromVersion) -- stale FORCE`() {
+        writeManifest("ja", packVersion = 1)
+        // v1's dict.sqlite is the pre-rank_score schema and is below
+        // additiveFromVersion=3, so the v3 upgrade is FORCE (clean reinstall to
+        // the current schema). The loosened probe still accepts the v1 DB as
+        // structurally valid so the pack survives to the orderly FORCE upgrade.
+        writeJaV1SchemaDb()
+        val stale = LanguagePackStore.staleInstalledPacks(ctx)
+        val ja = stale.firstOrNull { it.catalogKey == "ja" }
+        assertNotNull("Expected ja pack to be flagged stale", ja)
+        assertEquals(
+            "v1 on disk < additiveFromVersion=3 → FORCE",
+            UpgradeMode.FORCE, ja!!.upgradeMode,
+        )
+    }
+
+    @Test fun `schema-broken ja pack always classifies as FORCE`() {
+        // A v3 pack (NOT version-stale, 3 == catalog 3) whose dict.sqlite is
+        // missing required tables: the schema probe fails → schemaStale → the
+        // pack is flagged FORCE independent of the version boundary. Isolated at
+        // v3 now that every below-v3 pack is already version-FORCE anyway.
+        writeManifest("ja", packVersion = 3)
+        writeJaBrokenDb()
+        val stale = LanguagePackStore.staleInstalledPacks(ctx)
+        val ja = stale.firstOrNull { it.catalogKey == "ja" }
+        assertNotNull(ja)
+        assertEquals(
+            "Schema probe failure forces FORCE even at the current version",
+            UpgradeMode.FORCE, ja!!.upgradeMode,
+        )
+    }
+
+    @Test fun `target pack below additiveFromVersion classifies as FORCE`() {
+        // Catalog ships every pack with additiveFromVersion=1 (uniform
+        // visibility convention — see langpack_catalog.json). On-disk
+        // packVersion=0 is below the boundary → FORCE.
+        writeManifest("target-fr", packVersion = 0)
+        val stale = LanguagePackStore.staleInstalledPacks(ctx)
+        val tf = stale.firstOrNull { it.catalogKey == "target-fr" }
+        assertNotNull(tf)
+        assertEquals(
+            "on-disk < additiveFromVersion → FORCE",
+            UpgradeMode.FORCE, tf!!.upgradeMode,
+        )
+    }
+
+    @Test fun `target pack at-or-above additiveFromVersion classifies as ADDITIVE`() {
+        // Synthetic future scenario: target-fr bumped to packVersion=2 (in
+        // a hypothetical catalog change), v1 on disk, additiveFromVersion=1
+        // (the current uniform setting) → ADDITIVE. This is the safe
+        // default we want for target-pack version bumps: existing user data
+        // preserved during install, restored on cancel/fail.
+        writeManifest("target-fr", packVersion = 1)
+        val stale = LanguagePackStore.staleInstalledPacks(ctx)
+        val tf = stale.firstOrNull { it.catalogKey == "target-fr" }
+        // With current catalog (target-fr packVersion=1), v1 on disk vs
+        // catalog v1 means NOT stale, so won't appear at all. Skip the
+        // ADDITIVE assertion when nothing is stale; this test mainly
+        // documents the convention and will become live the moment any
+        // target pack version is bumped.
+        if (tf != null) {
+            assertEquals(UpgradeMode.ADDITIVE, tf.upgradeMode)
+        }
+    }
+
+    @Test fun `ja pack at v5 on disk vs catalog v5 -- not stale`() {
+        writeManifest("ja", packVersion = 5)
+        // Also write a minimal SQLite to satisfy the schema-current
+        // corruption backstop in the source path.
+        writeJaSchemaCurrentDb()
+        val stale = LanguagePackStore.staleInstalledPacks(ctx)
+        assertFalse(
+            "Same-version pack must not be stale",
+            stale.any { it.catalogKey == "ja" },
+        )
+    }
+
+    @Test fun `ja pack at v3 on disk vs catalog v5 -- stale ADDITIVE`() {
+        // The entry_id-index rebuild (ja-v3 -> ja-v4). v3 is at
+        // additiveFromVersion, so this upgrade must be the deferrable additive
+        // swap, not a FORCE: safeSwap keeps the old pack working until the new
+        // one is downloaded and verified. If this ever flips to FORCE, every
+        // Japanese user gets pre-uninstalled and stranded mid-download.
+        writeManifest("ja", packVersion = 3)
+        writeJaSchemaCurrentDb()
+        val stale = LanguagePackStore.staleInstalledPacks(ctx)
+        val ja = stale.firstOrNull { it.catalogKey == "ja" }
+        assertNotNull("ja v3 is below catalog v5, so it must be stale", ja)
+        assertEquals(UpgradeMode.ADDITIVE, ja!!.upgradeMode)
+    }
+
+    @Test fun `ja pack at v4 on disk vs catalog v5 -- stale ADDITIVE`() {
+        // The ke_inf pass (ja-v4 -> ja-v5), and the upgrade every currently
+        // installed Japanese user actually takes. v4 is above
+        // additiveFromVersion=3, and the app column-probes headword.ke_inf and
+        // reading.uk_applicable (DictionaryManager.hasKeInf), so a v4 pack stays
+        // fully usable while v5 downloads. If this ever flips to FORCE, every
+        // Japanese user is pre-uninstalled and stranded mid-download for a pack
+        // upgrade that adds two optional columns.
+        writeManifest("ja", packVersion = 4)
+        writeJaSchemaCurrentDb()
+        val stale = LanguagePackStore.staleInstalledPacks(ctx)
+        val ja = stale.firstOrNull { it.catalogKey == "ja" }
+        assertNotNull("ja v4 is below catalog v5, so it must be stale", ja)
+        assertEquals(UpgradeMode.ADDITIVE, ja!!.upgradeMode)
+    }
+
+    @Test fun `loosened JmdictSchemaProbe accepts v1-shaped DBs`() {
+        // Regression for the loosening: a v1-shaped DB (5 structural columns
+        // present, NO rank_score / uk_applicable / ke_pri) must pass the probe.
+        // The probe gates isInstalled (which deletes schema-stale packs) and the
+        // staleness scan; if it rejected v1, an existing v1 pack would be nuked
+        // on launch instead of surviving to its orderly FORCE upgrade to v3.
+        // Asserted directly now: v1 is below additiveFromVersion=2, so its
+        // upgrade mode is FORCE regardless of probe result — the probe outcome
+        // can no longer be inferred from the mode.
+        writeJaV1SchemaDb()
+        val dbFile = LanguagePackStore.dictDbFor(ctx, SourceLangId.JA)
+        assertTrue(
+            "Loosened probe must accept a v1-shaped dict.sqlite",
+            LanguagePackStore.isJmdictSchemaCurrent(dbFile),
+        )
+    }
+
+    @Test fun `target pack at older version is stale`() {
+        // Force "target-fr" to look stale by writing manifest with version 0
+        // (less than the catalog's packVersion).
+        writeManifest("target-fr", packVersion = 0)
+        val stale = LanguagePackStore.staleInstalledPacks(ctx)
+        val tf = stale.firstOrNull { it.catalogKey == "target-fr" }
+        assertNotNull("target-fr should be stale", tf)
+        assertEquals(PackKind.TARGET, tf!!.kind)
+        assertEquals("fr", tf.targetLangCode)
+        assertNull(tf.sourceLangId)
+    }
+
+    @Test fun `mixed stale packs returned together`() {
+        writeManifest("ja", packVersion = 1)
+        writeManifest("target-fr", packVersion = 0)
+        val stale = LanguagePackStore.staleInstalledPacks(ctx)
+        assertTrue(stale.any { it.catalogKey == "ja" })
+        assertTrue(stale.any { it.catalogKey == "target-fr" })
+    }
+
+    @Test fun `pack with no on-disk manifest is treated as never-installed`() {
+        // Create the directory but no manifest.json.
+        val dir = LanguagePackStore.dirFor(ctx, SourceLangId.JA)
+        dir.mkdirs()
+        File(dir, "dict.sqlite").writeBytes(byteArrayOf(0))
+        val stale = LanguagePackStore.staleInstalledPacks(ctx)
+        assertFalse(
+            "Manifest absence treated as not-installed; no prompt",
+            stale.any { it.catalogKey == "ja" },
+        )
+    }
+
+    @Test fun `engine packs are filtered out (would crash SourceLangId mapping)`() {
+        // Engine packs are bundled=false in the catalog with type="engine".
+        // If we ever write a manifest under their slot, they must STILL be
+        // filtered out so SourceLangId.fromCode("engine-translategemma")
+        // doesn't crash and so we don't try to install them via
+        // LanguagePackStore.install (which they don't go through).
+        writeManifest("engine-translategemma", packVersion = 0, dirName = "engine-translategemma")
+        writeManifest("engine-qwen-1-5b", packVersion = 0, dirName = "engine-qwen-1-5b")
+        val stale = LanguagePackStore.staleInstalledPacks(ctx)
+        assertFalse(
+            "Engine packs must never appear in stale list",
+            stale.any { it.catalogKey.startsWith("engine-") },
+        )
+    }
+
+    @Test fun `zh source pack returns ZH packId not a variant`() {
+        // Regression for ZH/ZH_HANT collapse. The catalog key is "zh" and
+        // ZH.packId == ZH. The ZH_HANT.packId override would collapse to
+        // ZH if ever introduced. Either way, the returned StalePack carries
+        // the ZH (packId variant), so releaseForPack and dirFor see the
+        // canonical pack.
+        writeManifest("zh", packVersion = 0, dirName = "zh")
+        val stale = LanguagePackStore.staleInstalledPacks(ctx)
+        val zh = stale.firstOrNull { it.catalogKey == "zh" }
+        assertNotNull(zh)
+        assertEquals(SourceLangId.ZH, zh!!.sourceLangId)
+        assertEquals(SourceLangId.ZH, zh.sourceLangId!!.packId)
+    }
+
+    @Test fun `unparseable manifest json is treated as not-installed`() {
+        // Synthetic corruption: garbage in the manifest file. The scan must
+        // not throw.
+        val manifest = LanguagePackStore.manifestFileFor(ctx, SourceLangId.JA)
+        manifest.parentFile?.mkdirs()
+        manifest.writeText("definitely not json {{{")
+        val stale = LanguagePackStore.staleInstalledPacks(ctx)
+        assertFalse(
+            "Garbage manifest skipped, not flagged",
+            stale.any { it.catalogKey == "ja" },
+        )
+    }
+
+    // ── isForcedUpgrade (readiness gate + settings re-select helper) ─────
+    // Single-pack version-only FORCE check the gate keys on. Unlike
+    // staleInstalledPacks it runs no schema probe (corruption is handled
+    // upstream by isInstalled), so these cases pin the version/additive logic.
+
+    @Test fun `isForcedUpgrade true for ja v2 below additiveFromVersion`() {
+        writeManifest("ja", packVersion = 2)
+        writeJaSchemaCurrentDb()
+        assertTrue(
+            "ja v2 < additiveFromVersion=3 → forced (obsolete) upgrade",
+            LanguagePackStore.isForcedUpgrade(ctx, SourceLangId.JA),
+        )
+    }
+
+    @Test fun `isForcedUpgrade false for ja v3 (additive to v4)`() {
+        writeManifest("ja", packVersion = 3)
+        writeJaSchemaCurrentDb()
+        assertFalse(
+            "ja v3 >= additiveFromVersion=3 → the v4 upgrade is additive, not forced",
+            LanguagePackStore.isForcedUpgrade(ctx, SourceLangId.JA),
+        )
+    }
+
+    @Test fun `isForcedUpgrade false for current ja v4`() {
+        writeManifest("ja", packVersion = 4)
+        writeJaSchemaCurrentDb()
+        assertFalse(
+            "ja v4 == catalog → not stale, not a forced upgrade",
+            LanguagePackStore.isForcedUpgrade(ctx, SourceLangId.JA),
+        )
+    }
+
+    @Test fun `isForcedUpgrade false when ja never installed`() {
+        // No manifest on disk: a never-installed pack routes through the
+        // onboarding download flow, not a forced *upgrade*.
+        assertFalse(LanguagePackStore.isForcedUpgrade(ctx, SourceLangId.JA))
+    }
+
+    @Test fun `isForcedUpgrade resolves ZH_HANT to the ZH pack`() {
+        // ZH_HANT shares ZH's pack (packId collapse). A stale zh pack on disk
+        // (v0 < additiveFromVersion) must read as forced for BOTH the ZH and
+        // ZH_HANT selections, since the gate keys on the user's chosen variant.
+        writeManifest("zh", packVersion = 0, dirName = "zh")
+        assertTrue(
+            "ZH must see its own forced state",
+            LanguagePackStore.isForcedUpgrade(ctx, SourceLangId.ZH),
+        )
+        assertTrue(
+            "ZH_HANT must collapse to the ZH pack's forced state",
+            LanguagePackStore.isForcedUpgrade(ctx, SourceLangId.ZH_HANT),
+        )
+    }
+
+    // ── Helpers ─────────────────────────────────────────────────────────
+
+    /** Write a minimal manifest.json under the pack directory. */
+    private fun writeManifest(
+        catalogKey: String,
+        packVersion: Int,
+        dirName: String = catalogKey,
+    ) {
+        val packDir = if (catalogKey.startsWith("target-")) {
+            File(langpacksRoot, dirName)
+        } else {
+            File(langpacksRoot, dirName)
+        }
+        packDir.mkdirs()
+        val json = """
+            {
+              "langId": "${dirName.removePrefix("target-")}",
+              "schemaVersion": 1,
+              "packVersion": $packVersion,
+              "appMinVersion": 0,
+              "files": [{"path": "dict.sqlite", "size": 0, "sha256": null}],
+              "totalSize": 0,
+              "licenses": []
+            }
+        """.trimIndent()
+        File(packDir, "manifest.json").writeText(json)
+    }
+
+    /** v2-shaped dict.sqlite (all columns including rank_score / uk_applicable). */
+    private fun writeJaSchemaCurrentDb() {
+        val dbFile = LanguagePackStore.dictDbFor(ctx, SourceLangId.JA)
+        dbFile.parentFile?.mkdirs()
+        android.database.sqlite.SQLiteDatabase
+            .openOrCreateDatabase(dbFile, null).use { db ->
+            db.execSQL("CREATE TABLE entry (id INTEGER PRIMARY KEY, is_common INTEGER, freq_score INTEGER)")
+            db.execSQL(
+                "CREATE TABLE headword (entry_id INTEGER, position INTEGER, text TEXT, " +
+                    "ke_pri TEXT DEFAULT '', rank_score INTEGER DEFAULT 0)"
+            )
+            db.execSQL(
+                "CREATE TABLE reading (entry_id INTEGER, position INTEGER, text TEXT, " +
+                    "no_kanji INTEGER, re_pri TEXT, freq_score INTEGER, " +
+                    "re_inf TEXT, rank_score INTEGER, uk_applicable INTEGER)"
+            )
+            db.execSQL("CREATE TABLE sense (entry_id INTEGER, position INTEGER, pos TEXT, glosses TEXT, misc TEXT)")
+            db.execSQL("CREATE TABLE kanjidic (literal TEXT PRIMARY KEY, on_readings TEXT, kun_readings TEXT, jlpt INTEGER, grade INTEGER, stroke_count INTEGER)")
+            db.execSQL("CREATE TABLE kanji_meaning (literal TEXT, lang TEXT, meanings TEXT, PRIMARY KEY(literal, lang))")
+        }
+    }
+
+    /** v1-shaped dict.sqlite — pre-ja-v2. Has the 5 structural tables/columns
+     *  the loosened JmdictSchemaProbe requires (entry.freq_score,
+     *  headword.text, sense.misc, kanjidic.literal, kanji_meaning.*) but
+     *  NOT the v2 columns (rank_score, uk_applicable, ke_pri). Used to
+     *  simulate an existing-user v1 install. */
+    private fun writeJaV1SchemaDb() {
+        val dbFile = LanguagePackStore.dictDbFor(ctx, SourceLangId.JA)
+        dbFile.parentFile?.mkdirs()
+        android.database.sqlite.SQLiteDatabase
+            .openOrCreateDatabase(dbFile, null).use { db ->
+            db.execSQL("CREATE TABLE entry (id INTEGER PRIMARY KEY, is_common INTEGER, freq_score INTEGER)")
+            db.execSQL("CREATE TABLE headword (entry_id INTEGER, position INTEGER, text TEXT)")
+            db.execSQL(
+                "CREATE TABLE reading (entry_id INTEGER, position INTEGER, text TEXT, " +
+                    "no_kanji INTEGER, re_pri TEXT, freq_score INTEGER)"
+            )
+            db.execSQL("CREATE TABLE sense (entry_id INTEGER, position INTEGER, pos TEXT, glosses TEXT, misc TEXT)")
+            db.execSQL("CREATE TABLE kanjidic (literal TEXT PRIMARY KEY, on_readings TEXT, kun_readings TEXT, jlpt INTEGER, grade INTEGER, stroke_count INTEGER)")
+            db.execSQL("CREATE TABLE kanji_meaning (literal TEXT, lang TEXT, meanings TEXT, PRIMARY KEY(literal, lang))")
+        }
+    }
+
+    /** Genuinely broken dict.sqlite — missing the headword table entirely.
+     *  Loosened probe rejects this (because headword.text probe throws),
+     *  which is the corruption backstop firing as designed. */
+    private fun writeJaBrokenDb() {
+        val dbFile = LanguagePackStore.dictDbFor(ctx, SourceLangId.JA)
+        dbFile.parentFile?.mkdirs()
+        android.database.sqlite.SQLiteDatabase
+            .openOrCreateDatabase(dbFile, null).use { db ->
+            db.execSQL("CREATE TABLE entry (id INTEGER PRIMARY KEY, is_common INTEGER, freq_score INTEGER)")
+            // No headword, no sense, no kanjidic, no kanji_meaning — schema probe will fail.
+        }
+    }
+}

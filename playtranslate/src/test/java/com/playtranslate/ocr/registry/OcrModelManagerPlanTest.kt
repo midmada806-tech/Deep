@@ -1,0 +1,251 @@
+package com.playtranslate.ocr.registry
+
+import com.playtranslate.language.OcrBackend
+import com.playtranslate.language.SourceLangId
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/**
+ * Pure unit tests for `OcrModelManager.plan` — the declarative-reconcile spine.
+ * The headline guarantee is shared-pack deletion safety as plain set-math.
+ */
+class OcrModelManagerPlanTest {
+
+    private val cjk = OcrBackend.Paddle("paddle-rec-cjk")   // shared by ja/zh/en
+    private val meiki = OcrBackend.Meiki("meiki-ja")
+    private val mlkit = OcrBackend.MLKitJapanese
+    private val cyr = OcrBackend.Paddle("paddle-rec-cyrillic")   // Russian: no ML Kit floor
+    private val latin = OcrBackend.Paddle("paddle-rec-latin")
+    private val unified = OcrBackend.Paddle("paddle-rec-unified") // v6 shared recognizer
+
+    private fun plan(
+        selected: Map<SourceLangId, OcrBackend>,
+        installed: Set<String>,
+        allBackends: Map<SourceLangId, List<OcrBackend>> = selected.mapValues { listOf(it.value) },
+    ) = OcrModelManager.plan(selected.keys, { selected.getValue(it) }, { allBackends[it].orEmpty() }, installed)
+
+    @Test fun emptyWhenNoLanguages() {
+        val p = OcrModelManager.plan(emptySet(), { error("unused") }, { error("unused") }, emptySet())
+        assertEquals(emptySet<String>(), p.required)
+        assertEquals(emptySet<String>(), p.toDownload)
+        assertEquals(emptySet<String>(), p.toDelete)
+    }
+
+    @Test fun downloadsRequiredForNewLanguages() {
+        val p = plan(mapOf(SourceLangId.JA to meiki, SourceLangId.EN to cjk), installed = emptySet())
+        assertEquals(setOf("meiki-ja", "paddle-rec-cjk"), p.toDownload)
+        assertEquals(emptySet<String>(), p.toDelete)
+    }
+
+    /** The exact requirement: deleting one language must NOT delete a pack another
+     *  installed language still uses. en+ja both used paddle-rec-cjk; en removed. */
+    @Test fun sharedPackSurvivesWhenAnotherLanguageStillUsesIt() {
+        val p = plan(mapOf(SourceLangId.JA to cjk), installed = setOf("paddle-rec-cjk"))
+        assertEquals(setOf("paddle-rec-cjk"), p.required)
+        assertEquals(emptySet<String>(), p.toDelete) // ja still needs it
+    }
+
+    @Test fun switchingBackendKeepsTheOldPackForReselection() {
+        // ja switched Meiki→Paddle while en already Paddle. ja is still installed and
+        // CAN still use Meiki, so meiki-ja is retained for a free switch back — NOT
+        // orphaned (the behavior reversal: deselection ≠ reclamation).
+        val p = plan(
+            mapOf(SourceLangId.JA to cjk, SourceLangId.EN to cjk),
+            installed = setOf("meiki-ja", "paddle-rec-cjk"),
+            allBackends = mapOf(
+                SourceLangId.JA to listOf(meiki, cjk),
+                SourceLangId.EN to listOf(cjk),
+            ),
+        )
+        assertEquals(setOf("paddle-rec-cjk"), p.required)
+        assertEquals(emptySet<String>(), p.toDelete) // meiki-ja retained: ja can still select it
+        assertEquals(emptySet<String>(), p.toDownload) // cjk already present
+    }
+
+    /** The new-behavior discriminator (fails under the old selection-keyed delete):
+     *  a shared recognizer stays on disk while an installed language that COULD use
+     *  it exists, even if that language currently has it DESELECTED (on the ML Kit
+     *  floor). Only removing every sharer reclaims it. */
+    @Test fun sharedPackRetainedWhileAnInstalledSharerExistsEvenIfDeselected() {
+        val p = plan(
+            mapOf(SourceLangId.JA to mlkit), // ja sits on the ML Kit floor; unified deselected
+            installed = setOf("paddle-rec-unified"),
+            allBackends = mapOf(SourceLangId.JA to listOf(meiki, unified, mlkit)),
+        )
+        assertEquals(emptySet<String>(), p.required) // ML Kit floor needs no pack
+        assertEquals(emptySet<String>(), p.toDelete)  // unified retained: ja can still select it
+    }
+
+    /** Removing a source language reclaims the pack(s) only it could use, while a
+     *  shared pack another installed language still lists is kept. */
+    @Test fun removingLanguageOrphansItsPacks() {
+        // ja removed; only en remains (selected unified + lists it as a backend).
+        // meiki-ja belonged to ja alone → orphaned; unified stays (en retains it).
+        val p = plan(
+            mapOf(SourceLangId.EN to unified),
+            installed = setOf("meiki-ja", "paddle-rec-unified"),
+            allBackends = mapOf(SourceLangId.EN to listOf(unified, OcrBackend.MLKitLatin)),
+        )
+        assertEquals(setOf("paddle-rec-unified"), p.required)
+        assertEquals(setOf("meiki-ja"), p.toDelete)
+    }
+
+    @Test fun mlKitNeedsNoPacks() {
+        val p = plan(mapOf(SourceLangId.JA to mlkit), installed = emptySet())
+        assertEquals(emptySet<String>(), p.required)
+        assertEquals(emptySet<String>(), p.toDownload)
+    }
+
+    /** A no-floor language whose backend isn't deliverable on this device
+     *  resolves to a null selectedBackend; plan must treat it as requiring no
+     *  packs (and not crash on the null). */
+    @Test fun nullBackendContributesNoRequiredPacks() {
+        val p = OcrModelManager.plan(
+            setOf(SourceLangId.RU, SourceLangId.JA),
+            { id -> if (id == SourceLangId.RU) null else meiki },
+            { id -> if (id == SourceLangId.RU) emptyList() else listOf(meiki) },
+            installedPacks = setOf("meiki-ja"),
+        )
+        assertEquals(setOf("meiki-ja"), p.required) // RU adds nothing
+        assertEquals(emptySet<String>(), p.toDownload)
+        assertEquals(emptySet<String>(), p.toDelete)
+    }
+
+    // ── resolveSelectedBackend: an unset token MEANS the default ─────────────
+    // The first deliverable backend whose packs are on disk wins when nothing is
+    // stored, so no setup/launch/switch path has to seed a token, and a language
+    // reached by a path that skips them (the icon's Simplified/Traditional
+    // toggle) runs the same default as one reached through the picker. A no-floor
+    // language (Russian) whose token is missing/stale must still resolve to its
+    // installed recognizer, or engineForSelected would drop to the empty engine.
+
+    private fun resolve(
+        available: List<OcrBackend>,
+        token: String?,
+        floor: OcrBackend?,
+        installed: Boolean,
+    ) = OcrModelManager.resolveSelectedBackend(available, token, floor, isInstalled = { installed })
+
+    @Test fun noFloorLangResolvesToItsOnlyBackendWhenTokenMissingOrStale() {
+        assertEquals(cyr, resolve(listOf(cyr), token = null, floor = null, installed = false))
+        assertEquals(cyr, resolve(listOf(cyr), token = "stale", floor = null, installed = false))
+    }
+
+    @Test fun storedTokenWinsWhenItMatchesAvailable() {
+        assertEquals(latin, resolve(listOf(latin, mlkit), token = "paddle", floor = mlkit, installed = true))
+    }
+
+    @Test fun explicitMlKitPickBeatsAnInstalledDefault() {
+        // A stored token is an explicit choice, the floor included.
+        assertEquals(mlkit, resolve(listOf(latin, mlkit), token = "mlkit", floor = mlkit, installed = true))
+    }
+
+    @Test fun unsetTokenResolvesToTheFirstInstalledBackend() {
+        // The default's pack is on disk (downloaded at setup, or by another
+        // language sharing it): it runs with nothing written.
+        assertEquals(latin, resolve(listOf(latin, mlkit), token = null, floor = mlkit, installed = true))
+        // A stale token (another language's engine) resolves like unset.
+        assertEquals(latin, resolve(listOf(latin, mlkit), token = "meiki", floor = mlkit, installed = true))
+    }
+
+    @Test fun unsetTokenKeepsTheFloorWhereItIsListedFirst() {
+        // Vietnamese/Turkish/Polish list ML Kit first: it is pack-less, so it
+        // is the first "installed" backend and stays the default.
+        assertEquals(mlkit, resolve(listOf(mlkit, latin), token = null, floor = mlkit, installed = true))
+    }
+
+    @Test fun flooredLangFallsBackToMlKitFloorWhenDefaultPackMissing() {
+        assertEquals(mlkit, resolve(listOf(latin, mlkit), token = null, floor = mlkit, installed = false))
+    }
+
+    @Test fun noDeliverableBackendAndNoFloorIsNull() {
+        // No-floor language on a 32-bit device: nothing deliverable → null.
+        assertEquals(null, resolve(emptyList(), token = null, floor = null, installed = false))
+    }
+
+    // ── requiredOcrReady: completeness must imply the engine can load ────────
+    // A no-floor language must NOT read as OCR-ready on a device that can't run
+    // its only backend, even if the pack files are present — else isFullyInstalled
+    // is true while engineForSelected yields the empty engine.
+
+    @Test fun noFloorOnIncompatibleDeviceIsNotReadyEvenWithPackOnDisk() {
+        // mnnAvailable=false → availableBackends empty → selectedBackend null,
+        // even though the pack files are on disk (isInstalled = true).
+        assertFalse(OcrModelManager.requiredOcrReady(hasFloor = false, selected = null, isInstalled = { true }))
+    }
+
+    @Test fun noFloorReadyOnlyWhenResolvedBackendsPacksInstalled() {
+        assertFalse(OcrModelManager.requiredOcrReady(hasFloor = false, selected = cyr, isInstalled = { false }))
+        assertTrue(OcrModelManager.requiredOcrReady(hasFloor = false, selected = cyr, isInstalled = { true }))
+    }
+
+    @Test fun flooredLangIsAlwaysReady() {
+        assertTrue(OcrModelManager.requiredOcrReady(hasFloor = true, selected = null, isInstalled = { false }))
+    }
+
+    // ── decideOcrMigration: the launch-time grandfathered-OCR decision table ──
+    // Floored source + no stored choice + a better-than-floor default whose pack
+    // is missing ⇒ OFFER_DOWNLOAD. Everything else is NONE: a default already on
+    // disk needs no token, the unset selection resolves to it.
+    private fun migrate(choice: Boolean, floor: OcrBackend?, best: OcrBackend?, installed: Boolean) =
+        OcrModelManager.decideOcrMigration(choice, floor, best, isInstalled = { installed })
+
+    @Test fun migrationNoneWhenUserAlreadyChose() {
+        // An explicit choice (incl. an explicit ML Kit pick) is never overridden.
+        assertEquals(OcrModelManager.OcrMigration.NONE, migrate(choice = true, floor = mlkit, best = meiki, installed = false))
+    }
+
+    @Test fun migrationNoneForNoFloorSource() {
+        // No ML Kit floor (Russian): the non-load-bearing token already resolves to
+        // the lone recognizer, so there is nothing to migrate.
+        assertEquals(OcrModelManager.OcrMigration.NONE, migrate(choice = false, floor = null, best = cyr, installed = true))
+    }
+
+    @Test fun migrationNoneWhenDefaultIsTheFloor() {
+        // Vietnamese/Turkish: the floor IS the top default.
+        assertEquals(OcrModelManager.OcrMigration.NONE, migrate(choice = false, floor = mlkit, best = mlkit, installed = false))
+    }
+
+    @Test fun migrationNoneWhenNoDeliverableBackend() {
+        assertEquals(OcrModelManager.OcrMigration.NONE, migrate(choice = false, floor = mlkit, best = null, installed = false))
+    }
+
+    @Test fun migrationNoneWhenBestHasNoPacks() {
+        // A pack-less non-floor "best" (no recognizer to fetch or adopt) is a no-op.
+        assertEquals(OcrModelManager.OcrMigration.NONE, migrate(choice = false, floor = mlkit, best = OcrBackend.MLKitKorean, installed = false))
+    }
+
+    @Test fun migrationNoneWhenDefaultPackAlreadyInstalled() {
+        // The shared recognizer is already on disk (downloaded for another
+        // language): resolveSelectedBackend runs it with nothing written.
+        assertEquals(OcrModelManager.OcrMigration.NONE, migrate(choice = false, floor = mlkit, best = cjk, installed = true))
+    }
+
+    @Test fun migrationOfferDownloadWhenDefaultPackMissing() {
+        assertEquals(OcrModelManager.OcrMigration.OFFER_DOWNLOAD, migrate(choice = false, floor = mlkit, best = meiki, installed = false))
+    }
+
+    // ── selectedOcrNeedsDownload: a stored choice whose pack is missing must still
+    // re-fetch, not silently drop to ML Kit. Guards the v6 pack-key migration — the
+    // coarse "paddle" token resolves to paddle-rec-unified, but an upgraded user may
+    // only have the retired cjk/latin on disk (decideOcrMigration returns NONE for a
+    // stored choice, so this is the path that catches it).
+
+    @Test fun selectedPaddleWithMissingPackNeedsDownload() {
+        assertTrue(OcrModelManager.selectedOcrNeedsDownload(unified) { false })
+    }
+
+    @Test fun selectedPaddleWithInstalledPackNeedsNoDownload() {
+        assertFalse(OcrModelManager.selectedOcrNeedsDownload(unified) { true })
+    }
+
+    @Test fun packlessFloorNeverNeedsDownload() {
+        assertFalse(OcrModelManager.selectedOcrNeedsDownload(mlkit) { false })
+    }
+
+    @Test fun nullSelectedBackendNeedsNoDownload() {
+        assertFalse(OcrModelManager.selectedOcrNeedsDownload(null) { false })
+    }
+}

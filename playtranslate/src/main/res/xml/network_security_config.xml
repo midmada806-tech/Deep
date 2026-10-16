@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Cleartext (HTTP) is permitted app-wide. PlayTranslate's own services
+    (DeepL, Gemini, OpenAI, the language-pack CDN) are all HTTPS, but the
+    OpenAI online backend exposes a user-settable base URL (the ADVANCED
+    settings section) that can point at an arbitrary OpenAI-compatible
+    endpoint — including self-hosted servers (LM Studio / Ollama /
+    llama.cpp) reachable only over plain HTTP on a LAN address. Android's
+    network-security-config can only whitelist literal hosts, not IP
+    ranges, so per-host exceptions can't cover user-supplied LAN IPs;
+    permitting cleartext globally is the only way to support them.
+
+    Tradeoff: a user who enters an http:// URL sends their API key in
+    cleartext to that host. The settings validator
+    (LlmBackendSettingsActivity.validateBaseUrl) still requires a
+    well-formed http/https URL, and the field defaults to the canonical
+    HTTPS OpenAI endpoint.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

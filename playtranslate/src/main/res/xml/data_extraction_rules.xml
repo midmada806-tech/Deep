@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Backup / transfer policy for Android 12+ (API 31), referenced from
+    android:dataExtractionRules in the manifest.
+
+    android:allowBackup is "true" (it was "false" from the first release until the
+    hidden-words store shipped). What that flag never governed, from Android 12, is device-
+    to-device transfer: per the Auto Backup docs, "on devices from some device manufacturers,
+    specifying android:allowBackup='false' disables cloud-based backup and restore ... but
+    doesn't disable device-to-device transfers for the app." So these rules, not the flag,
+    are the policy on every channel, and they are written to be safe under either flag value.
+
+    ONE directory rides both channels: files/vocab/ (HiddenWordsStore.BACKUP_DIR), which
+    holds the hidden-words store, files/vocab/hidden_words.sqlite, and, only between a crash
+    mid-write and the store's next open, that store's SQLite rollback journal. The rule
+    names the DIRECTORY on purpose: a copy of the main file alone, taken while a hot journal
+    exists, would restore as a half-applied write with nothing to roll it back, whereas the
+    two files together restore as exactly the post-crash state SQLite is built to recover
+    from (the same pair the platform's database domain copies for every app). Nothing else
+    may be placed in vocab/. The store is user-curated primary data expected to reach
+    thousands of rows, with no other way to survive a reinstall or a new device until a
+    management screen with export exists. It is a vocabulary list: not secret, and far
+    weaker as a record of what the user reads than the translation-history database, which
+    stays excluded. BackupRulesTest pins the include to the store's constants and the rest
+    of this file's shape.
+
+    Everything else stays out of every channel, as before: it is either secret (the API keys
+    in shared_prefs/playtranslate_prefs.xml), private (the translation-history database), or
+    bulky and re-downloadable (LLM models, dictionary packs, OCR models, which live under
+    no_backup and are never eligible anyway).
+
+    Belt and braces, on purpose. The presence of an <include> already makes backup
+    include-only (the docs: "If you specify an <include> element, the system no longer
+    includes any files by default"), so the excludes below are redundant while the include
+    parses. They are kept so the API-key guard does not rest on that one semantic: if the
+    include line were ever dropped or broken, the defaults would reopen every domain, and
+    the explicit excludes would still hold the sharedpref and database domains closed.
+    Under files/, the two other residents (vad/, the Silero VAD model copy; crashes/, crash
+    reports) are excluded by name for the same reason. Lint's FullBackupContent check wants
+    every exclude inside an included path, so it reports each of these as an error and
+    lintVitalRelease fails the release build on them; the root element's tools:ignore keeps
+    them, and BackupRulesTest, not lint, is what checks this file.
+
+    The ONE exclude that must NOT be here: <exclude domain="root" path="." />. The root
+    domain is the app's whole data directory, and the platform matches excludes
+    asymmetrically: on backup by exact path (BackupAgent.manifestExcludesContainFilePath),
+    so a root exclude never touched files/vocab and the file went out; on restore by path
+    PREFIX for any exclude that names a directory (BackupUtils.isFileSpecifiedInPathList,
+    checked before the includes), so a root exclude silently rejects every restored file,
+    ours included. Caught on Thor: a backup pass that logged the store file, then three
+    restores that connected the agent and wrote nothing. BackupRulesTest pins its absence.
+    Every other domain here (databases/, shared_prefs/, external files, the
+    device-protected tree) is a sibling of files/, not an ancestor, so those excludes are
+    safe on restore.
+
+    Two syntax traps worth knowing before editing:
+      * `path` is REQUIRED on a rule. A rule with no path is silently SKIPPED, so
+        `<exclude domain="root" />` would look like an opt-out and do nothing.
+      * `path="."` means the domain's root directory, and a directory rule applies
+        recursively to everything beneath it.
+
+    The third section, <cross-platform-transfer> (Android-to-iOS, from Android 16 QPR2 /
+    API 36.1), is deliberately absent, and ADDING IT WOULD BE A MISTAKE. It is not a hole.
+
+    The two sections above are on by default — omit them and the mode is "fully enabled
+    for all content" — which is why they exclude every domain exhaustively. Cross-platform
+    transfer inverts that: the section is how an app *joins* the channel, not how it leaves.
+    It requires platform="ios" plus a <platform-specific-params> child carrying the bundleId,
+    teamId and contentVersion of a counterpart iOS app, and those IDs ARE the destination —
+    per the Auto Backup docs they ensure "data is only transferred to the specified app on
+    the other platform". PlayTranslate has no iOS build, so there is no counterpart to name,
+    nowhere for data to go, and nothing to exclude. Note the shape of the argument: an app
+    without an iOS twin cannot author a valid section here at all, so the mode cannot be
+    on-by-default — the apps that would most need an opt-out could not express one.
+
+    Writing the section anyway (with invented IDs, since we have no real ones) is the single
+    action that would opt us in, and a missing required attribute makes this whole file fail
+    to parse — which falls back to the DEFAULT rules and reopens cloud backup and D2D. So the
+    "fix" costs more than the imaginary bug. If PlayTranslate ever ships on iOS, revisit with
+    real IDs; until then, absence is the correct and safe configuration.
+-->
+<data-extraction-rules
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:ignore="FullBackupContent">
+    <cloud-backup>
+        <include domain="file" path="vocab" />
+        <exclude domain="file" path="vad" />
+        <exclude domain="file" path="crashes" />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
+        <exclude domain="device_root" path="." />
+        <exclude domain="device_file" path="." />
+        <exclude domain="device_database" path="." />
+        <exclude domain="device_sharedpref" path="." />
+    </cloud-backup>
+
+    <device-transfer>
+        <include domain="file" path="vocab" />
+        <exclude domain="file" path="vad" />
+        <exclude domain="file" path="crashes" />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
+        <exclude domain="device_root" path="." />
+        <exclude domain="device_file" path="." />
+        <exclude domain="device_database" path="." />
+        <exclude domain="device_sharedpref" path="." />
+    </device-transfer>
+</data-extraction-rules>

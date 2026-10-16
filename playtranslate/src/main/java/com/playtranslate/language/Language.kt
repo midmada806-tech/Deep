@@ -1,0 +1,657 @@
+package com.playtranslate.language
+
+import com.google.mlkit.nl.translate.TranslateLanguage
+
+/**
+ * Identifier for every source language PlayTranslate supports (or will support
+ * in future phases). The [code] matches ML Kit / DeepL / Lingva convention so
+ * it can double as the storage format in [com.playtranslate.Prefs.sourceLang].
+ *
+ * Phase 1 only has [JA]; the rest of the enum populates as each phase lands
+ * (see `v2-architecture.md` § Phase roadmap).
+ */
+enum class SourceLangId(val code: String) {
+    JA("ja"),
+    EN("en"),
+    ZH("zh"),
+    ZH_HANT("zh-Hant"),
+    ES("es"),
+    FR("fr"),
+    DE("de"),
+    IT("it"),
+    PT("pt"),
+    NL("nl"),
+    TR("tr"),
+    VI("vi"),
+    ID("id"),
+    SV("sv"),
+    DA("da"),
+    NO("no"),
+    FI("fi"),
+    HU("hu"),
+    RO("ro"),
+    CA("ca"),
+    KO("ko"),
+    RU("ru"),
+    AR("ar"),
+    TH("th"),
+    HI("hi"),
+    PL("pl"),
+    ;
+
+    /** The lang ID used for pack directory/catalog lookup. Variants that share
+     *  a pack (e.g. ZH_HANT shares ZH's pack) override this. */
+    val packId: SourceLangId get() = when (this) {
+        ZH_HANT -> ZH
+        else -> this
+    }
+
+    /** The bare primary subtag this language consumes Yomitan data under
+     *  (ZH_HANT's "zh-Hant" → "zh"), case-folded with [java.util.Locale.ROOT]
+     *  since codes are ASCII. Used as the per-language Yomitan capability-cache
+     *  key and as [com.playtranslate.yomitan.matchesSourceLanguage]'s argument,
+     *  so ZH and ZH_HANT share one "zh" cache and consume the same dictionaries
+     *  (they already share the pack via [packId]). */
+    fun yomitanConsumingLang(): String =
+        code.split('-', '_').first().lowercase(java.util.Locale.ROOT)
+
+    /** The [java.util.Locale] for this language. Drives locale-sensitive
+     *  string operations — most importantly Turkish case mapping, where
+     *  `"IŞIK".lowercase()` yields `"işik"` under the default locale but
+     *  the Turkish-correct `"ışık"` under this one. */
+    val locale: java.util.Locale
+        get() = java.util.Locale.forLanguageTag(code)
+
+    /** Display name in [locale]. e.g. `JA.displayName(Locale.forLanguageTag("en"))` → "Japanese";
+     *  `JA.displayName(Locale.forLanguageTag("ja"))` → "日本語". Defaults to system locale.
+     *  First-char casing uses the display [locale] so Turkish display names
+     *  title-case correctly (e.g. "ispanyolca" → "İspanyolca").
+     *
+     *  INVARIANT (load-bearing): the result is a name *in [locale]'s own script*,
+     *  from CLDR. Thai UI relies on this: because Thai does not space between
+     *  words, several `values-th` strings concatenate this value directly into a
+     *  compound (`ภาษา%1$s` = ภาษาญี่ปุ่น), which is only correct while the name
+     *  comes back in Thai (ญี่ปุ่น), not Latin (Japanese). CLDR has Thai names for
+     *  every language the enum ships (verified: 25/25, no Latin fallback), so the
+     *  invariant holds — but a language added without a CLDR Thai name would render
+     *  the seam as `ภาษาXxx`. Check that before adding one, or those strings must
+     *  re-introduce a space.
+     *
+     *  This holds ONLY when [locale] is the UI locale (the default). The target-
+     *  language migration/offline strings deliberately format with the *target's
+     *  own* locale instead (`getDisplayLanguage(targetLocale)`), yielding an
+     *  endonym — Español, Français, 日本語 — which is usually Latin, so those Thai
+     *  seams keep their space. Same method, opposite spacing, because the locale
+     *  argument differs. See docs/l10n-language-parameters.md (Thai block). */
+    fun displayName(locale: java.util.Locale = java.util.Locale.getDefault()): String = when (this) {
+        ZH      -> java.util.Locale.forLanguageTag("zh-Hans").getDisplayName(locale)
+            .replaceFirstChar { it.uppercase(locale) }
+        ZH_HANT -> java.util.Locale.forLanguageTag("zh-Hant").getDisplayName(locale)
+            .replaceFirstChar { it.uppercase(locale) }
+        else    -> java.util.Locale.forLanguageTag(code).getDisplayLanguage(locale)
+            .replaceFirstChar { it.uppercase(locale) }
+    }
+
+    companion object {
+        /** Region codes that imply Traditional Chinese script. */
+        private val TRADITIONAL_REGIONS = setOf("tw", "hk", "mo")
+
+        fun fromCode(code: String?): SourceLangId? {
+            if (code.isNullOrBlank()) return null
+            // Language codes are ASCII identifiers, not natural-language
+            // text — use ROOT so Turkish-locale devices don't mangle
+            // `"IT".lowercase()` into `"ıt"`.
+            val lower = code.lowercase(java.util.Locale.ROOT)
+            // Exact match first (handles "zh-hant" → ZH_HANT)
+            entries.firstOrNull { it.code.lowercase(java.util.Locale.ROOT) == lower }?.let { return it }
+            // Map zh-TW, zh-HK, zh-MO, zh-Hant-TW etc. to ZH_HANT
+            if (lower.startsWith("zh-")) {
+                val parts = lower.removePrefix("zh-").split('-')
+                if (parts.any { it == "hant" || it in TRADITIONAL_REGIONS }) return ZH_HANT
+            }
+            // Fall back to primary subtag (handles "ja-JP" → JA)
+            val primary = lower.substringBefore('-')
+            return entries.firstOrNull { it.code == primary }
+        }
+    }
+}
+
+/** Broad script family, used for OCR / segmentation / rendering decisions. */
+enum class ScriptFamily { LATIN, CJK_JAPANESE, CJK_CHINESE, CJK_KOREAN, ARABIC, DEVANAGARI, CYRILLIC, THAI }
+
+/** Thai block U+0E00..U+0E7F — single source of truth shared by the TH profile's
+ *  [SourceLanguageProfile.isScriptChar], `ThaiEngine.isLookupWorthy`, and the Thai
+ *  segmenter. Mirrors the literal in `LayoutAnalyzer.isSourceLangChar("th")`. */
+val THAI_RANGE: CharRange = '฀'..'๿'
+
+/** Devanagari block U+0900..U+097F — shared by the HI profile's
+ *  [SourceLanguageProfile.isScriptChar]; mirrors `LayoutAnalyzer.isSourceLangChar("hi")`. */
+val DEVANAGARI_RANGE: CharRange = 'ऀ'..'ॿ'
+
+/** Text direction for rendering source text. */
+enum class TextDirection { LTR, RTL }
+
+/** Text orientation: horizontal (left-to-right lines) or vertical (top-to-bottom columns). */
+enum class TextOrientation { HORIZONTAL, VERTICAL }
+
+/**
+ * True when [targetCode] is a language conventionally typeset top-to-bottom in
+ * vertical columns (tategaki): Japanese, Chinese, and Korean. Drives whether
+ * the translation overlay stacks glyphs upright in a vertical OCR box (see
+ * [com.playtranslate.ui.VerticalTextView]) instead of rotating a horizontal
+ * line 90°. All three are square-cell scripts that stack cleanly, and all use
+ * right-to-left column progression when vertical (Classical-Chinese-derived),
+ * so no per-language direction branching is needed.
+ *
+ * Latin and other ragged-width scripts are excluded — stacking them reads
+ * poorly, so they keep the rotation path.
+ *
+ * Real target codes come from ML Kit (TranslateLanguage), which only emits the
+ * bare `"zh"` for Chinese; the `zh-Hant` / `zh-*` matches below are defensive.
+ */
+fun targetSupportsVerticalText(targetCode: String): Boolean {
+    val c = targetCode.lowercase(java.util.Locale.ROOT)
+    return c == "ja" || c == "ko" || c == "zh" || c.startsWith("zh-") || c.startsWith("zh_")
+}
+
+/**
+ * True when [targetCode]'s script can render as upright, vertically-stacked cells — the gate
+ * for STACK_UPRIGHT ([com.playtranslate.ui.RenderMode]) on a non-vertical target. Alphabetic,
+ * non-connected scripts qualify (Latin, Cyrillic, Greek), as do the CJK scripts. Connected /
+ * complex scripts are excluded: Arabic and Hebrew shape contextually and break when split into
+ * isolated cells; Thai/Lao/Khmer/Burmese and the Indic scripts use combining clusters that
+ * stacking would scramble. Defaults to stackable for unlisted codes (overwhelmingly
+ * Latin-based), so the exclusion list is the small, explicit set of complex scripts.
+ */
+fun stackableTargetScript(targetCode: String): Boolean {
+    val c = targetCode.lowercase(java.util.Locale.ROOT).substringBefore('-').substringBefore('_')
+    val nonStackable = setOf(
+        "ar", "fa", "ur", "ps", "sd",                                           // Arabic script
+        "he", "yi",                                                             // Hebrew script
+        "th", "lo", "km", "my",                                                 // Thai / Lao / Khmer / Burmese
+        "hi", "bn", "pa", "gu", "or", "ta", "te", "kn", "ml", "si", "mr", "ne", // Indic
+    )
+    return c !in nonStackable
+}
+
+/**
+ * Block-level horizontal alignment of an OCR'd paragraph. Detected post-grouping
+ * from the geometry of the constituent line rects (see
+ * [com.playtranslate.OcrManager.Companion.classifyGroupAlignment]). LEFT is the
+ * default — it covers truly left-aligned paragraphs *and* every ambiguous case
+ * (single-line groups, vertical groups, mixed evidence) where we have no
+ * positive evidence of centering. Only used to align the skeleton placeholder
+ * and the rendered translation; never feeds back into grouping decisions.
+ */
+enum class TextAlignment { LEFT, CENTER }
+
+/**
+ * The on-device OCR backend that produces recognized text for a source
+ * language. Sealed so the OCR engine factory `when` is exhaustive at compile
+ * time. [packKeys] names the downloadable OCR model pack(s) the backend needs,
+ * used by `OcrModelManager` to plan downloads/deletions.
+ */
+sealed interface OcrBackend {
+    /** Downloadable OCR model packs this backend needs on disk. Empty for ML Kit
+     *  (bundled in the APK) and Tesseract; the PaddleOCR detector is bundled too,
+     *  so Paddle needs only its per-script recognizer pack. Packs SHARED across
+     *  languages are expressed as the SAME key (the manager dedups via the key). */
+    val packKeys: Set<String>
+
+    /** True if this engine runs on the arm64-only MNN native runtime (the `:mnn`
+     *  module ships arm64-v8a only), so it must be gated to 64-bit processes — see
+     *  [com.playtranslate.ocr.registry.OcrModelManager.isBackendAvailable]. Mirrors
+     *  the LLM tier's `OnDeviceLlmBackend` arm64 gate. */
+    val requiresMnn: Boolean get() = false
+
+    data object MLKitLatin : OcrBackend { override val packKeys = emptySet<String>() }
+    data object MLKitChinese : OcrBackend { override val packKeys = emptySet<String>() }
+    data object MLKitJapanese : OcrBackend { override val packKeys = emptySet<String>() }
+    data object MLKitKorean : OcrBackend { override val packKeys = emptySet<String>() }
+    data object MLKitDevanagari : OcrBackend { override val packKeys = emptySet<String>() }
+    data class Tesseract(val traineddataCode: String) : OcrBackend { override val packKeys = emptySet<String>() }
+    /** Meiki (Japanese): detector + horizontal + vertical recognizers in one pack. */
+    data class Meiki(val packKey: String) : OcrBackend {
+        override val packKeys = setOf(packKey)
+        override val requiresMnn = true
+    }
+    /** PaddleOCR: one per-script recognizer pack ([recPackKey]); detector bundled.
+     *  [fast] picks the speed tier — fp16 + reduced detector input (much faster;
+     *  may miss very small text) vs the default accurate fp32/full-res config.
+     *  Both tiers share the same pack files: the tier is runtime configuration
+     *  only, so it costs no extra download and the pack planner sees one pack. */
+    data class Paddle(val recPackKey: String, val fast: Boolean = false) : OcrBackend {
+        override val packKeys = setOf(recPackKey)
+        override val requiresMnn = true
+    }
+}
+
+/**
+ * Kind of hint text rendered above source text (furigana for Japanese, pinyin
+ * for Chinese, harakat for Arabic). Only [FURIGANA] is implemented in v2;
+ * [PINYIN] and [HARAKAT] are reserved so the architecture stays forward-
+ * compatible without locking in a boolean we would have to widen later.
+ */
+enum class HintTextKind {
+    NONE,
+    FURIGANA,
+    PINYIN,
+    HARAKAT,
+}
+
+/**
+ * The script-level facts the OCR pipeline keys on by translation code ("ja",
+ * "zh"): how text runs, whether words are space-separated, which characters
+ * belong to the script. Deliberately NOT the profile: a translation code
+ * collapses variants (ZH and ZH_HANT both OCR as "zh"), so nothing that
+ * identifies the language, its id or its per-language settings, can be
+ * recovered from one. Identity travels as [SourceLangId]; a code only ever
+ * comes back as these traits ([SourceLanguageProfiles.scriptFor]).
+ */
+interface ScriptTraits {
+    val textDirection: TextDirection
+    val wordsSeparatedByWhitespace: Boolean
+    val isScriptChar: (Char) -> Boolean
+}
+
+/**
+ * Static, const-like description of one source language. All the knobs that
+ * come from *knowing* "this is Japanese" without needing any on-device data.
+ * One value per supported language, defined in [SourceLanguageProfiles].
+ */
+data class SourceLanguageProfile(
+    val id: SourceLangId,
+    val scriptFamily: ScriptFamily,
+    override val textDirection: TextDirection,
+    /** The ML Kit OCR recognizer that needs no download — the always-available
+     *  floor. Null for scripts ML Kit can't read (e.g. Cyrillic), where the only
+     *  OCR is a downloadable MNN recognizer (see
+     *  [com.playtranslate.ocr.registry.OcrModelManager.hasMlKitFloor]). */
+    val mlKitFloor: OcrBackend?,
+    val hintTextKind: HintTextKind,
+    override val wordsSeparatedByWhitespace: Boolean,
+    override val isScriptChar: (Char) -> Boolean,
+    val translationCode: String,
+    /** When true, dictionary results show traditional headword first. */
+    val preferTraditional: Boolean = false,
+) : ScriptTraits {
+    /**
+     * On-device OCR backends in PRIORITY order (highest first); [mlKitFloor]
+     * (ML Kit) is the floor when present, and null for scripts ML Kit can't
+     * read (e.g. Cyrillic) — those languages have only their downloadable MNN
+     * recognizer, so a missing/incompatible pack means no OCR at all (gated by
+     * `OcrModelManager`). Availability = which backends appear. PaddleOCR
+     * recognizer packs are SHARED by key — ja/zh/en/latin all name
+     * "paddle-rec-unified", so `OcrModelManager` dedups/reclaims via the shared
+     * key with no special-casing (the detector is bundled in the APK).
+     */
+    val ocrBackends: List<OcrBackend>
+        get() = buildList {
+            if (id == SourceLangId.JA) add(OcrBackend.Meiki("meiki-ja"))
+            // Vietnamese, Turkish and Polish default to ML Kit instead of the shared
+            // Paddle latin recognizer, which handles their language-specific letters
+            // less reliably (Vietnamese's dense diacritics; Turkish's dotless ı/İ, ğ, ş;
+            // Polish's ł/ż/ź, small marks that degrade at low resolution).
+            // Putting the ML Kit floor first makes it the default; Paddle stays in
+            // the list as a secondary, user-selectable option.
+            val mlKitDefault =
+                (id == SourceLangId.VI || id == SourceLangId.TR || id == SourceLangId.PL) &&
+                    mlKitFloor != null
+            if (mlKitDefault) add(mlKitFloor)  // smart-cast non-null via mlKitDefault
+            // Each Paddle recognizer is offered as TWO speed tiers over the same
+            // pack: accurate (fp32, full-res detection — the default tier, first)
+            // and fast (fp16 + reduced detector input; opt-in, may miss very small
+            // text). Same pack key, so download/dedup/delete see one pack.
+            fun addPaddleTiers(recPackKey: String) {
+                add(OcrBackend.Paddle(recPackKey))
+                add(OcrBackend.Paddle(recPackKey, fast = true))
+            }
+            when (scriptFamily) {
+                // PP-OCRv6 unified recognizer: one pack for Simp/Trad Chinese +
+                // English + Japanese + 46 Latin scripts (replaces paddle-rec-cjk +
+                // paddle-rec-latin). Shared by key, so ja/zh/en/latin all dedup.
+                ScriptFamily.CJK_JAPANESE, ScriptFamily.CJK_CHINESE ->
+                    addPaddleTiers("paddle-rec-unified")
+                ScriptFamily.CJK_KOREAN -> addPaddleTiers("paddle-rec-korean")
+                ScriptFamily.LATIN -> addPaddleTiers("paddle-rec-unified")
+                ScriptFamily.CYRILLIC -> addPaddleTiers("paddle-rec-cyrillic")
+                ScriptFamily.ARABIC -> addPaddleTiers("paddle-rec-arabic")
+                ScriptFamily.THAI -> addPaddleTiers("paddle-rec-thai")
+                ScriptFamily.DEVANAGARI -> {} // floor = ML Kit Devanagari (via mlKitFloor); paddle-rec-devanagari dormant
+            }
+            // ML Kit floor last (unless already first, or null for no-floor scripts).
+            if (!mlKitDefault) mlKitFloor?.let { add(it) }
+        }
+}
+
+private val CJK_CHAR_CHECK: (Char) -> Boolean = { c ->
+    c in '\u4E00'..'\u9FFF' || c in '\u3400'..'\u4DBF'
+}
+
+/** Static profile registry. Phase 3 added EN; later phases add more languages. */
+object SourceLanguageProfiles {
+    private val all: Map<SourceLangId, SourceLanguageProfile> = mapOf(
+        SourceLangId.JA to SourceLanguageProfile(
+            id = SourceLangId.JA,
+            scriptFamily = ScriptFamily.CJK_JAPANESE,
+            textDirection = TextDirection.LTR,
+            mlKitFloor = OcrBackend.MLKitJapanese,
+            hintTextKind = HintTextKind.FURIGANA,
+            wordsSeparatedByWhitespace = false,
+            isScriptChar = { c ->
+                c in '\u3040'..'\u309F'     // Hiragana
+                    || c in '\u30A0'..'\u30FF'  // Katakana
+                    || c in '\u4E00'..'\u9FFF'  // CJK Unified Ideographs
+                    || c in '\u3400'..'\u4DBF'  // CJK Extension A
+                    || c in '\uFF65'..'\uFF9F'  // Half-width Katakana
+            },
+            translationCode = TranslateLanguage.JAPANESE,
+        ),
+        SourceLangId.EN to SourceLanguageProfile(
+            id = SourceLangId.EN,
+            scriptFamily = ScriptFamily.LATIN,
+            textDirection = TextDirection.LTR,
+            mlKitFloor = OcrBackend.MLKitLatin,
+            hintTextKind = HintTextKind.NONE,
+            wordsSeparatedByWhitespace = true,
+            isScriptChar = { c ->
+                c in '\u0041'..'\u005A'     // A-Z
+                    || c in '\u0061'..'\u007A'  // a-z
+                    || c in '\u00C0'..'\u00FF'  // Latin-1 Supplement letters
+            },
+            translationCode = TranslateLanguage.ENGLISH,
+        ),
+        SourceLangId.ZH to SourceLanguageProfile(
+            id = SourceLangId.ZH,
+            scriptFamily = ScriptFamily.CJK_CHINESE,
+            textDirection = TextDirection.LTR,
+            mlKitFloor = OcrBackend.MLKitChinese,
+            hintTextKind = HintTextKind.PINYIN,
+            wordsSeparatedByWhitespace = false,
+            isScriptChar = CJK_CHAR_CHECK,
+            translationCode = TranslateLanguage.CHINESE,
+        ),
+        SourceLangId.ZH_HANT to SourceLanguageProfile(
+            id = SourceLangId.ZH_HANT,
+            scriptFamily = ScriptFamily.CJK_CHINESE,
+            textDirection = TextDirection.LTR,
+            mlKitFloor = OcrBackend.MLKitChinese,
+            hintTextKind = HintTextKind.PINYIN,
+            wordsSeparatedByWhitespace = false,
+            isScriptChar = CJK_CHAR_CHECK,
+            translationCode = TranslateLanguage.CHINESE,
+            preferTraditional = true,
+        ),
+        SourceLangId.ES to SourceLanguageProfile(
+            id = SourceLangId.ES,
+            scriptFamily = ScriptFamily.LATIN,
+            textDirection = TextDirection.LTR,
+            mlKitFloor = OcrBackend.MLKitLatin,
+            hintTextKind = HintTextKind.NONE,
+            wordsSeparatedByWhitespace = true,
+            isScriptChar = { c ->
+                c in '\u0041'..'\u005A'     // A-Z
+                    || c in '\u0061'..'\u007A'  // a-z
+                    || c in '\u00C0'..'\u00FF'  // Latin-1 Supplement (á, é, ñ, ü, etc.)
+            },
+            translationCode = TranslateLanguage.SPANISH,
+        ),
+        SourceLangId.FR to SourceLanguageProfile(
+            id = SourceLangId.FR,
+            scriptFamily = ScriptFamily.LATIN,
+            textDirection = TextDirection.LTR,
+            mlKitFloor = OcrBackend.MLKitLatin,
+            hintTextKind = HintTextKind.NONE,
+            wordsSeparatedByWhitespace = true,
+            isScriptChar = { c ->
+                c in 'A'..'Z'     // A-Z
+                    || c in 'a'..'z'  // a-z
+                    || c in 'À'..'ÿ'  // Latin-1 Supplement (à, é, ç, ù, ü, ÿ, etc.)
+                    || c == 'Œ' || c == 'œ'  // Œ œ
+                    || c == 'Ÿ'            // Ÿ
+            },
+            translationCode = TranslateLanguage.FRENCH,
+        ),
+        SourceLangId.DE to latinProfile(SourceLangId.DE, TranslateLanguage.GERMAN),
+        SourceLangId.IT to latinProfile(SourceLangId.IT, TranslateLanguage.ITALIAN),
+        SourceLangId.PT to latinProfile(SourceLangId.PT, TranslateLanguage.PORTUGUESE),
+        SourceLangId.NL to latinProfile(SourceLangId.NL, TranslateLanguage.DUTCH),
+        SourceLangId.SV to latinProfile(SourceLangId.SV, TranslateLanguage.SWEDISH),
+        SourceLangId.DA to latinProfile(SourceLangId.DA, TranslateLanguage.DANISH),
+        SourceLangId.NO to latinProfile(SourceLangId.NO, TranslateLanguage.NORWEGIAN),
+        SourceLangId.FI to latinProfile(SourceLangId.FI, TranslateLanguage.FINNISH),
+        SourceLangId.CA to latinProfile(SourceLangId.CA, TranslateLanguage.CATALAN),
+        SourceLangId.ID to latinProfile(SourceLangId.ID, TranslateLanguage.INDONESIAN),
+        SourceLangId.TR to SourceLanguageProfile(
+            id = SourceLangId.TR,
+            scriptFamily = ScriptFamily.LATIN,
+            textDirection = TextDirection.LTR,
+            mlKitFloor = OcrBackend.MLKitLatin,
+            hintTextKind = HintTextKind.NONE,
+            wordsSeparatedByWhitespace = true,
+            isScriptChar = { c ->
+                c in 'A'..'Z'     // A-Z
+                    || c in 'a'..'z'  // a-z
+                    || c in 'À'..'ÿ'  // Latin-1 Supplement (ç, ö, ü)
+                    || c in 'Ğ'..'ğ'  // Ğ ğ
+                    || c == 'İ' || c == 'ı'  // İ ı
+                    || c in 'Ş'..'ş'  // Ş ş
+            },
+            translationCode = TranslateLanguage.TURKISH,
+        ),
+        SourceLangId.HU to SourceLanguageProfile(
+            id = SourceLangId.HU,
+            scriptFamily = ScriptFamily.LATIN,
+            textDirection = TextDirection.LTR,
+            mlKitFloor = OcrBackend.MLKitLatin,
+            hintTextKind = HintTextKind.NONE,
+            wordsSeparatedByWhitespace = true,
+            isScriptChar = { c ->
+                c in 'A'..'Z'     // A-Z
+                    || c in 'a'..'z'  // a-z
+                    || c in 'À'..'ÿ'  // Latin-1 Supplement (á é í ó ö ú ü)
+                    || c in 'Ő'..'ő'  // Ő ő
+                    || c in 'Ű'..'ű'  // Ű ű
+            },
+            translationCode = TranslateLanguage.HUNGARIAN,
+        ),
+        SourceLangId.RO to SourceLanguageProfile(
+            id = SourceLangId.RO,
+            scriptFamily = ScriptFamily.LATIN,
+            textDirection = TextDirection.LTR,
+            mlKitFloor = OcrBackend.MLKitLatin,
+            hintTextKind = HintTextKind.NONE,
+            wordsSeparatedByWhitespace = true,
+            isScriptChar = { c ->
+                c in 'A'..'Z'     // A-Z
+                    || c in 'a'..'z'  // a-z
+                    || c in 'À'..'ÿ'  // Latin-1 Supplement (â î)
+                    || c in 'Ă'..'ă'  // Ă ă
+                    || c in 'Ș'..'ț'  // Ș ș Ț ț (modern comma-below)
+                    || c in 'Ş'..'ş'  // Ş ş (historical cedilla)
+                    || c in 'Ţ'..'ţ'  // Ţ ţ (historical cedilla)
+            },
+            translationCode = TranslateLanguage.ROMANIAN,
+        ),
+        SourceLangId.VI to SourceLanguageProfile(
+            id = SourceLangId.VI,
+            scriptFamily = ScriptFamily.LATIN,
+            textDirection = TextDirection.LTR,
+            mlKitFloor = OcrBackend.MLKitLatin,
+            hintTextKind = HintTextKind.NONE,
+            wordsSeparatedByWhitespace = true,
+            isScriptChar = { c ->
+                c in 'A'..'Z'     // A-Z
+                    || c in 'a'..'z'  // a-z
+                    || c in 'À'..'ÿ'  // Latin-1 Supplement (â ê ô and plain variants)
+                    || c in 'Ā'..'ſ'  // Latin Extended-A (đ Đ ă Ă)
+                    || c in 'Ơ'..'ư'  // ơ Ơ ư Ư
+                    || c in 'Ḁ'..'ỿ'  // Latin Extended Additional (tonal vowels)
+            },
+            translationCode = TranslateLanguage.VIETNAMESE,
+        ),
+        SourceLangId.KO to SourceLanguageProfile(
+            id = SourceLangId.KO,
+            scriptFamily = ScriptFamily.CJK_KOREAN,
+            textDirection = TextDirection.LTR,
+            mlKitFloor = OcrBackend.MLKitKorean,
+            // Modern Korean game text is Hangul-only; no character-level
+            // reading annotations needed. Hanja (rare in games) would use
+            // ReadingAttribute from Nori, out of scope for V1.
+            hintTextKind = HintTextKind.NONE,
+            // Korean DOES use whitespace between eojeol (unlike JA/ZH),
+            // even though morpheme splitting happens sub-eojeol. This flag
+            // only drives OCR line-grouping cosmetics (OcrManager:122,615),
+            // not tokenization — KoreanEngine uses Nori regardless.
+            wordsSeparatedByWhitespace = true,
+            // Hangul ranges mirror `OcrManager.isSourceLangChar("ko", …)`:
+            // Syllables U+AC00..U+D7AF, Jamo U+1100..U+11FF,
+            // Compatibility Jamo U+3130..U+318F.
+            isScriptChar = { c ->
+                c in '가'..'힯'     // Hangul Syllables
+                    || c in 'ᄀ'..'ᇿ'  // Hangul Jamo
+                    || c in '㄰'..'㆏'  // Hangul Compatibility Jamo
+            },
+            translationCode = TranslateLanguage.KOREAN,
+        ),
+        SourceLangId.RU to SourceLanguageProfile(
+            id = SourceLangId.RU,
+            scriptFamily = ScriptFamily.CYRILLIC,
+            textDirection = TextDirection.LTR,
+            // No ML Kit Cyrillic recognizer — Russian's only OCR is the arm64-only
+            // paddle-rec-cyrillic pack, so there is no always-present floor. A
+            // missing/incompatible pack means no OCR (see OcrModelManager.hasMlKitFloor).
+            mlKitFloor = null,
+            hintTextKind = HintTextKind.NONE,
+            // Korean DOES use whitespace; Russian likewise (drives OCR line-grouping
+            // cosmetics only — LatinEngine tokenizes via ICU BreakIterator + Snowball).
+            wordsSeparatedByWhitespace = true,
+            // Cyrillic + Cyrillic Supplement basic block; mirrors
+            // OcrManager.isSourceLangChar("ru") (U+0400..U+04FF).
+            isScriptChar = { c -> c in 'Ѐ'..'ӿ' },
+            translationCode = TranslateLanguage.RUSSIAN,
+        ),
+        SourceLangId.AR to SourceLanguageProfile(
+            id = SourceLangId.AR,
+            scriptFamily = ScriptFamily.ARABIC,
+            // First RTL source language. textDirection is consumed by the OCR
+            // visual→logical reorder and the overlay geometry. PaddleOCR emits
+            // Arabic in visual order; we convert to logical (storage) order
+            // downstream so the canonical group string is reading-order.
+            textDirection = TextDirection.RTL,
+            // No ML Kit Arabic recognizer — Arabic's only OCR is the arm64-only
+            // paddle-rec-arabic pack, so there is no always-present floor (like RU).
+            mlKitFloor = null,
+            // HARAKAT (vowel-diacritic hint) is deferred — needs a diacritizer.
+            hintTextKind = HintTextKind.NONE,
+            // Arabic separates words with whitespace (drives OCR line-grouping
+            // cosmetics + LineAssembler; LatinEngine tokenizes via ICU
+            // BreakIterator + Snowball ArabicStemmer).
+            wordsSeparatedByWhitespace = true,
+            // Arabic block + Supplement + Extended-A (Persian/Urdu/Pashto letters
+            // the shared recognizer emits) + Presentation Forms-A/B (ligatures
+            // like ﷲ ﷼ in the PP-OCRv5 Arabic charset). Arabic-Indic digits
+            // U+0660..U+0669 fall inside the base block.
+            isScriptChar = { c ->
+                c in '؀'..'ۿ'        // Arabic
+                    || c in 'ݐ'..'ݿ'  // Arabic Supplement
+                    || c in 'ࢠ'..'ࣿ'  // Arabic Extended-A
+                    || c in 'ﭐ'..'﷿'  // Presentation Forms-A (incl. ﷲ ﷼)
+                    || c in 'ﹰ'..'ﻼ'  // Presentation Forms-B (Arabic ligatures)
+            },
+            translationCode = TranslateLanguage.ARABIC,
+        ),
+        SourceLangId.TH to SourceLanguageProfile(
+            id = SourceLangId.TH,
+            scriptFamily = ScriptFamily.THAI,
+            textDirection = TextDirection.LTR,
+            // No ML Kit Thai recognizer — Thai's only OCR is the arm64-only
+            // paddle-rec-thai pack, so there is no always-present floor (like RU/AR).
+            mlKitFloor = null,
+            hintTextKind = HintTextKind.NONE,
+            // Thai is written WITHOUT inter-word spaces (like CJK). false drops the
+            // OCR line-join separator (LayoutAnalyzer) and skips LineAssembler;
+            // ThaiEngine segments via the dictionary maximal-matcher, not whitespace.
+            wordsSeparatedByWhitespace = false,
+            // Thai block U+0E00..U+0E7F; shared THAI_RANGE mirrors
+            // OcrManager/LayoutAnalyzer.isSourceLangChar("th").
+            isScriptChar = { c -> c in THAI_RANGE },
+            translationCode = TranslateLanguage.THAI,
+        ),
+        SourceLangId.HI to SourceLanguageProfile(
+            id = SourceLangId.HI,
+            scriptFamily = ScriptFamily.DEVANAGARI,
+            textDirection = TextDirection.LTR,
+            // ML Kit HAS a Devanagari recognizer, so Hindi gets an always-present
+            // floor (unlike RU/AR/TH). paddle-rec-devanagari stays dormant — no
+            // evidence it beats ML Kit; wired later only if it demonstrably wins.
+            mlKitFloor = OcrBackend.MLKitDevanagari,
+            hintTextKind = HintTextKind.NONE,
+            // Hindi uses inter-word whitespace → LatinEngine tokenizes via ICU
+            // BreakIterator (no segmenter). Surface + Wiktionary form_of aliases;
+            // null stemmer in v1 (Lucene HindiStemmer deferred until measured).
+            wordsSeparatedByWhitespace = true,
+            // Devanagari block U+0900..U+097F; shared DEVANAGARI_RANGE mirrors
+            // LayoutAnalyzer.isSourceLangChar("hi").
+            isScriptChar = { c -> c in DEVANAGARI_RANGE },
+            translationCode = TranslateLanguage.HINDI,
+        ),
+        SourceLangId.PL to SourceLanguageProfile(
+            id = SourceLangId.PL,
+            scriptFamily = ScriptFamily.LATIN,
+            textDirection = TextDirection.LTR,
+            mlKitFloor = OcrBackend.MLKitLatin,
+            hintTextKind = HintTextKind.NONE,
+            wordsSeparatedByWhitespace = true,
+            // latinProfile's range covers only ó of Polish's nine diacritic
+            // letters, so PL declares its own. Verified: these five Extended-A
+            // ranges cover all 18 Polish letters exactly, with ZERO stray
+            // non-Polish characters pulled in.
+            isScriptChar = { c ->
+                c in 'A'..'Z'     // A-Z
+                    || c in 'a'..'z'  // a-z
+                    || c in 'À'..'ÿ'  // Latin-1 Supplement (Ó ó)
+                    || c in 'Ą'..'ć'  // Ą ą Ć ć   (U+0104–U+0107)
+                    || c in 'Ę'..'ę'  // Ę ę       (U+0118–U+0119)
+                    || c in 'Ł'..'ń'  // Ł ł Ń ń   (U+0141–U+0144)
+                    || c in 'Ś'..'ś'  // Ś ś       (U+015A–U+015B)
+                    || c in 'Ź'..'ż'  // Ź ź Ż ż   (U+0179–U+017C)
+            },
+            translationCode = TranslateLanguage.POLISH,
+        ),
+    )
+
+    /** Standard Latin-script profile: basic ASCII + Latin-1 Supplement. Used
+     *  by languages whose alphabet fits entirely in those two ranges
+     *  (German, Italian, Portuguese, Dutch, Nordic languages, Catalan,
+     *  Indonesian). Languages that need extra characters (Œ for French,
+     *  Ğ/İ/Ş for Turkish, Ă/Ș/Ț for Romanian, Ő/Ű for Hungarian, the
+     *  full Vietnamese tonal set) declare their profiles inline. */
+    private fun latinProfile(id: SourceLangId, translationCode: String): SourceLanguageProfile =
+        SourceLanguageProfile(
+            id = id,
+            scriptFamily = ScriptFamily.LATIN,
+            textDirection = TextDirection.LTR,
+            mlKitFloor = OcrBackend.MLKitLatin,
+            hintTextKind = HintTextKind.NONE,
+            wordsSeparatedByWhitespace = true,
+            isScriptChar = { c ->
+                c in 'A'..'Z'     // A-Z
+                    || c in 'a'..'z'  // a-z
+                    || c in 'À'..'ÿ'  // Latin-1 Supplement
+            },
+            translationCode = translationCode,
+        )
+
+    /** Non-null lookup by ID. Throws for unknown IDs (shouldn't happen in Phase 1). */
+    operator fun get(id: SourceLangId): SourceLanguageProfile =
+        all[id] ?: error("No profile registered for $id")
+
+    /** Defensive raw-string lookup. Returns null for unknown codes. */
+    /** The script traits a translation [code] ("zh", "ja") stands for: the one
+     *  lookup the code-keyed OCR pipeline may make. Returns the traits only, never
+     *  the profile, because the code does not identify the language (see
+     *  [ScriptTraits]); whatever needs the language itself takes a [SourceLangId]. */
+    fun scriptFor(code: String?): ScriptTraits? =
+        SourceLangId.fromCode(code)?.let { all[it] }
+}

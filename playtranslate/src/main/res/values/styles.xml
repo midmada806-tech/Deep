@@ -1,0 +1,316 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!--
+        Base themes — define the semantic pt* colour tokens (palette only).
+        Accent attributes (ptAccent, ptAccentTint, ptTextLink) are defaulted
+        to Teal here, but are overridden at runtime by one of the
+        ThemeOverlay.PT.Accent.* overlays via theme.applyStyle().
+        See ThemeUtils.applyTheme().
+    -->
+    <!-- Parent is .Dark (not .DayNight): when the user explicitly picks
+         Dark in-app while the system is in Light mode, DayNight still resolves
+         Material color slots (colorSurface, colorOnSurface, …) against the
+         system's light values. AppBarLayout.liftOnScroll then tints the app
+         bar with white-ish colorSurface while ?attr/ptText is white (dark
+         palette), producing white-on-white. Pinning to .Dark here decouples
+         our explicit theme choice from the system uiMode. .White below stays
+         on .Light for the symmetric reason. -->
+    <style name="Theme.PlayTranslate" parent="Theme.Material3.Dark.NoActionBar">
+
+        <!-- ── Dark palette ──────────────────────────────────────────────── -->
+        <item name="ptBg">@color/pt_dark_bg</item>
+        <item name="ptSurface">@color/pt_dark_surface</item>
+        <item name="ptCard">@color/pt_dark_card</item>
+        <item name="ptElevated">@color/pt_dark_elevated</item>
+        <item name="ptDivider">@color/pt_dark_divider</item>
+        <item name="ptOutline">@color/pt_dark_outline</item>
+        <item name="ptText">@color/pt_dark_text</item>
+        <item name="ptTextMuted">@color/pt_dark_text_muted</item>
+        <item name="ptTextHint">@color/pt_dark_text_hint</item>
+        <item name="ptTextDim">@color/pt_dark_text_dim</item>
+        <item name="ptTextTranslation">@color/pt_dark_translation</item>
+        <item name="ptAccentOn">@color/pt_dark_text_on_accent</item>
+        <item name="ptDanger">@color/pt_dark_danger</item>
+        <item name="ptWarning">@color/pt_dark_warning</item>
+        <item name="ptRadius">14dp</item>
+
+        <!-- ── Accent fallback (Teal) — overridden by accent overlay ─────── -->
+        <item name="ptAccent">@color/pt_accent_teal</item>
+        <item name="ptAccentTint">@color/pt_accent_teal_tint</item>
+        <item name="ptTextLink">@color/pt_accent_teal</item>
+
+        <!-- ── Material component mapping ────────────────────────────────── -->
+        <!-- Mirror Theme.PlayTranslate.White's mapping so Material widgets
+             (AppBarLayout liftOnScroll, MaterialCardView elevation overlay,
+             MaterialButton etc.) all resolve against the dark pt* palette
+             instead of falling back to Material3.Dark's stock surface tones. -->
+        <item name="colorPrimary">?attr/ptAccent</item>
+        <item name="colorOnPrimary">?attr/ptAccentOn</item>
+        <item name="colorPrimaryContainer">?attr/ptAccent</item>
+        <item name="colorOnPrimaryContainer">?attr/ptAccentOn</item>
+        <item name="colorPrimaryDark">?attr/ptAccent</item>
+        <item name="colorAccent">?attr/ptAccent</item>
+        <item name="colorSurface">?attr/ptSurface</item>
+        <item name="colorOnSurface">?attr/ptText</item>
+        <item name="colorOnSurfaceVariant">?attr/ptTextMuted</item>
+        <item name="colorOutline">?attr/ptDivider</item>
+        <item name="android:windowBackground">?attr/ptBg</item>
+        <item name="android:statusBarColor">?attr/ptBg</item>
+        <item name="android:navigationBarColor">?attr/ptBg</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:textColor">?attr/ptText</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="materialSwitchStyle">@style/Widget.PlayTranslate.MaterialSwitch</item>
+    </style>
+
+    <!-- ── Light palette ──────────────────────────────────────────────────── -->
+    <style name="Theme.PlayTranslate.White" parent="Theme.Material3.Light.NoActionBar">
+        <item name="ptBg">@color/pt_light_bg</item>
+        <item name="ptSurface">@color/pt_light_surface</item>
+        <item name="ptCard">@color/pt_light_card</item>
+        <item name="ptElevated">@color/pt_light_elevated</item>
+        <item name="ptDivider">@color/pt_light_divider</item>
+        <item name="ptOutline">@color/pt_light_outline</item>
+        <item name="ptText">@color/pt_light_text</item>
+        <item name="ptTextMuted">@color/pt_light_text_muted</item>
+        <item name="ptTextHint">@color/pt_light_text_hint</item>
+        <item name="ptTextDim">@color/pt_light_text_dim</item>
+        <item name="ptTextTranslation">@color/pt_light_translation</item>
+        <item name="ptAccentOn">@color/pt_light_text_on_accent</item>
+        <item name="ptDanger">@color/pt_light_danger</item>
+        <item name="ptWarning">@color/pt_light_warning</item>
+        <item name="ptRadius">14dp</item>
+
+        <!-- ── Accent fallback (Teal) — overridden by accent overlay ─────── -->
+        <item name="ptAccent">@color/pt_accent_teal</item>
+        <item name="ptAccentTint">@color/pt_accent_teal_tint</item>
+        <item name="ptTextLink">@color/pt_accent_teal</item>
+
+        <item name="colorPrimary">?attr/ptAccent</item>
+        <item name="colorOnPrimary">?attr/ptAccentOn</item>
+        <item name="colorPrimaryContainer">?attr/ptAccent</item>
+        <item name="colorOnPrimaryContainer">?attr/ptAccentOn</item>
+        <item name="colorPrimaryDark">?attr/ptAccent</item>
+        <item name="colorAccent">?attr/ptAccent</item>
+        <item name="colorSurface">?attr/ptSurface</item>
+        <item name="colorOnSurface">?attr/ptText</item>
+        <item name="colorOnSurfaceVariant">?attr/ptTextMuted</item>
+        <item name="colorOutline">?attr/ptDivider</item>
+        <item name="android:windowBackground">?attr/ptBg</item>
+        <item name="android:statusBarColor">?attr/ptBg</item>
+        <item name="android:navigationBarColor">?attr/ptBg</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:textColor">?attr/ptText</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="materialSwitchStyle">@style/Widget.PlayTranslate.MaterialSwitch</item>
+    </style>
+
+    <!-- ── Full-screen dialog overlays ──────────────────────────────────── -->
+    <!-- windowBackground / statusBarColor inherit ptBg from the parent
+         theme, matching what the dialog content layouts paint — so the
+         layouts can leave their root android:background unset and avoid
+         the redundant fill the lint Overdraw check flagged. -->
+    <style name="Theme.PlayTranslate.FullScreenDialog" parent="Theme.PlayTranslate">
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:windowSoftInputMode">adjustResize</item>
+    </style>
+
+    <style name="Theme.PlayTranslate.White.FullScreenDialog" parent="Theme.PlayTranslate.White">
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:windowSoftInputMode">adjustResize</item>
+    </style>
+
+    <!-- ── Transparent overlay-style activities ─────────────────────────── -->
+    <!-- The select-to-translate panel host: the calling app stays visible
+         behind the sheet, so the window is translucent with no background
+         and no dim. Material parents (not the bare framework Translucent
+         theme) keep the activity's own dialogs — TTS missing, Anki not
+         installed — styled. -->
+    <style name="Theme.PlayTranslate.Transparent" parent="Theme.PlayTranslate">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimEnabled">false</item>
+    </style>
+
+    <style name="Theme.PlayTranslate.White.Transparent" parent="Theme.PlayTranslate.White">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimEnabled">false</item>
+    </style>
+
+    <!-- ══════════════════════════════════════════════════════════════════ -->
+    <!-- Accent overlays — applied on top of either base theme via         -->
+    <!-- theme.applyStyle(R.style.ThemeOverlay_PT_Accent_<Name>, true).    -->
+    <!-- Each overrides the three accent slots; everything else inherits.  -->
+    <!-- ══════════════════════════════════════════════════════════════════ -->
+
+    <style name="ThemeOverlay.PT.Accent.Coral" parent="">
+        <item name="ptAccent">@color/pt_accent_coral</item>
+        <item name="ptAccentTint">@color/pt_accent_coral_tint</item>
+        <item name="ptTextLink">@color/pt_accent_coral</item>
+    </style>
+
+    <style name="ThemeOverlay.PT.Accent.Amber" parent="">
+        <item name="ptAccent">@color/pt_accent_amber</item>
+        <item name="ptAccentTint">@color/pt_accent_amber_tint</item>
+        <item name="ptTextLink">@color/pt_accent_amber</item>
+    </style>
+
+    <style name="ThemeOverlay.PT.Accent.Lime" parent="">
+        <item name="ptAccent">@color/pt_accent_lime</item>
+        <item name="ptAccentTint">@color/pt_accent_lime_tint</item>
+        <item name="ptTextLink">@color/pt_accent_lime</item>
+    </style>
+
+    <style name="ThemeOverlay.PT.Accent.Mint" parent="">
+        <item name="ptAccent">@color/pt_accent_mint</item>
+        <item name="ptAccentTint">@color/pt_accent_mint_tint</item>
+        <item name="ptTextLink">@color/pt_accent_mint</item>
+    </style>
+
+    <style name="ThemeOverlay.PT.Accent.Teal" parent="">
+        <item name="ptAccent">@color/pt_accent_teal</item>
+        <item name="ptAccentTint">@color/pt_accent_teal_tint</item>
+        <item name="ptTextLink">@color/pt_accent_teal</item>
+    </style>
+
+    <style name="ThemeOverlay.PT.Accent.Aqua" parent="">
+        <item name="ptAccent">@color/pt_accent_aqua</item>
+        <item name="ptAccentTint">@color/pt_accent_aqua_tint</item>
+        <item name="ptTextLink">@color/pt_accent_aqua</item>
+    </style>
+
+    <style name="ThemeOverlay.PT.Accent.Sky" parent="">
+        <item name="ptAccent">@color/pt_accent_sky</item>
+        <item name="ptAccentTint">@color/pt_accent_sky_tint</item>
+        <item name="ptTextLink">@color/pt_accent_sky</item>
+    </style>
+
+    <style name="ThemeOverlay.PT.Accent.Steel" parent="">
+        <item name="ptAccent">@color/pt_accent_steel</item>
+        <item name="ptAccentTint">@color/pt_accent_steel_tint</item>
+        <item name="ptTextLink">@color/pt_accent_steel</item>
+    </style>
+
+    <style name="ThemeOverlay.PT.Accent.Violet" parent="">
+        <item name="ptAccent">@color/pt_accent_violet</item>
+        <item name="ptAccentTint">@color/pt_accent_violet_tint</item>
+        <item name="ptTextLink">@color/pt_accent_violet</item>
+    </style>
+
+    <style name="ThemeOverlay.PT.Accent.Orchid" parent="">
+        <item name="ptAccent">@color/pt_accent_orchid</item>
+        <item name="ptAccentTint">@color/pt_accent_orchid_tint</item>
+        <item name="ptTextLink">@color/pt_accent_orchid</item>
+    </style>
+
+    <style name="ThemeOverlay.PT.Accent.Rose" parent="">
+        <item name="ptAccent">@color/pt_accent_rose</item>
+        <item name="ptAccentTint">@color/pt_accent_rose_tint</item>
+        <item name="ptTextLink">@color/pt_accent_rose</item>
+    </style>
+
+    <!-- ── Widget styles (reference attrs, resolve at inflation time) ───── -->
+
+    <style name="Widget.PlayTranslate.MaterialSwitch" parent="Widget.Material3.CompoundButton.MaterialSwitch">
+        <item name="thumbTint">@color/switch_thumb</item>
+        <item name="trackTint">@color/switch_track</item>
+        <item name="trackDecorationTint">@color/switch_track_decoration</item>
+    </style>
+
+    <!-- Unified onboarding primary CTA: full-width, 56dp tall (insets
+         zeroed so layout_height is the visual height), pt_radius corners,
+         flat accent fill with accentOn ink. Trailing 18dp arrow is opt-in
+         per button via app:icon + app:iconGravity="textEnd" (used on
+         "Open Settings"-style actions, omitted on terminal ones like
+         "Grant Permission"). -->
+    <style name="Widget.PlayTranslate.PrimaryButton" parent="Widget.Material3.Button.UnelevatedButton">
+        <item name="backgroundTint">?attr/ptAccent</item>
+        <item name="android:textColor">?attr/ptAccentOn</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:letterSpacing">0.01</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="cornerRadius">@dimen/pt_radius</item>
+        <item name="iconTint">?attr/ptAccentOn</item>
+        <item name="iconSize">18dp</item>
+        <item name="iconPadding">8dp</item>
+    </style>
+
+    <!-- ── Settings row typography ──────────────────────────────────────── -->
+
+    <style name="Text.PT.RowTitle" parent="">
+        <item name="android:textSize">15sp</item>
+        <item name="android:textColor">?attr/ptText</item>
+        <item name="android:textStyle">normal</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+    </style>
+
+    <style name="Text.PT.RowSubtitle" parent="">
+        <item name="android:textSize">13sp</item>
+        <item name="android:textColor">?attr/ptTextMuted</item>
+        <item name="android:lineSpacingMultiplier">1.35</item>
+    </style>
+
+    <style name="Text.PT.GroupHeader" parent="">
+        <item name="android:textSize">11sp</item>
+        <item name="android:textColor">?attr/ptTextMuted</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:letterSpacing">0.12</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+    </style>
+
+    <style name="Text.PT.RowValue" parent="">
+        <item name="android:textSize">13sp</item>
+        <item name="android:textColor">?attr/ptTextMuted</item>
+    </style>
+
+    <!-- A neutral metadata chip riding alongside a row title (the "LLM"
+         provider label on the Translation services rows). The dictionary
+         result cell's meta-chip treatment (BadgeChips.freqChip: muted
+         medium text on a 4dp-radius ptSurface fill) expressed in XML, so
+         the two surfaces can't drift apart. Rows pair it with
+         layout_gravity=center_vertical — it rides the title's line rather
+         than sharing its baseline, since the fill would otherwise sit
+         high. -->
+    <style name="Text.PT.MetaLabel" parent="">
+        <item name="android:textSize">11.5sp</item>
+        <item name="android:textColor">?attr/ptTextMuted</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:background">@drawable/bg_meta_chip</item>
+        <item name="android:paddingHorizontal">8dp</item>
+        <item name="android:paddingVertical">2dp</item>
+    </style>
+
+    <!-- ── Onboarding feature-row typography ────────────────────────────── -->
+
+    <style name="Text.PT.FeatureTitle" parent="">
+        <item name="android:textSize">15sp</item>
+        <item name="android:textColor">?attr/ptText</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:lineSpacingMultiplier">1.3</item>
+    </style>
+
+    <style name="Text.PT.FeatureSubtitle" parent="">
+        <item name="android:textSize">12.5sp</item>
+        <item name="android:textColor">?attr/ptTextMuted</item>
+        <item name="android:lineSpacingMultiplier">1.4</item>
+    </style>
+
+    <!-- Enter from bottom, exit to bottom (word/sentence detail) -->
+    <style name="AnimSlideBottom">
+        <item name="android:windowEnterAnimation">@anim/slide_in_bottom</item>
+        <item name="android:windowExitAnimation">@anim/slide_out_bottom</item>
+    </style>
+
+    <!-- Enter from right, exit to right (settings, anki review) -->
+    <style name="AnimSlideRight">
+        <item name="android:windowEnterAnimation">@anim/slide_in_right</item>
+        <item name="android:windowExitAnimation">@anim/slide_out_right</item>
+    </style>
+
+</resources>

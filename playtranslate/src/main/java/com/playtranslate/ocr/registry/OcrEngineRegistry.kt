@@ -1,0 +1,107 @@
+package com.playtranslate.ocr.registry
+
+import android.util.Log
+import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
+import com.google.mlkit.vision.text.devanagari.DevanagariTextRecognizerOptions
+import com.google.mlkit.vision.text.japanese.JapaneseTextRecognizerOptions
+import com.google.mlkit.vision.text.korean.KoreanTextRecognizerOptions
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import com.playtranslate.OcrTokenScope
+import com.playtranslate.language.OcrBackend
+import com.playtranslate.language.SourceLangId
+import com.playtranslate.language.SourceLanguageProfiles
+import com.playtranslate.ocr.core.OcrCapabilities
+import com.playtranslate.ocr.core.OcrEngine
+import com.playtranslate.ocr.core.OcrImage
+import com.playtranslate.ocr.core.OcrOrientationSupport
+import com.playtranslate.ocr.core.RecognizedRegion
+import com.playtranslate.ocr.core.ResolvedOcr
+import com.playtranslate.ocr.engines.mlkit.MlKitOcr
+import java.util.concurrent.ConcurrentHashMap
+
+/**
+ * Builds and caches the [OcrEngine] for a source language — the named factory
+ * that "recipe" collapses into. Each source language maps (via its
+ * `SourceLanguageProfile.mlKitFloor`) to a constructed engine; one engine per
+ * backend, cached and reused. [closeAll] releases them (called from
+ * `OcrManager.releaseAll` at TRIM_MEMORY_COMPLETE).
+ *
+ * Replaces the former `ScreenTextRecognizerFactory`. As detector+recognizer
+ * engines land (PaddleOCR via DetectThenRecognize, Meiki, manga-ocr), their
+ * composed [OcrEngine] trees are constructed here.
+ */
+class OcrEngineRegistry {
+
+    private val engines = ConcurrentHashMap<OcrBackend, OcrEngine>()
+
+    /** The engine for the EXACT source language [id] (its selection is
+     *  per-language, Chinese variants included) under [scope]: the global
+     *  selection, or a tool's own, inheriting global until set. */
+    fun engineFor(id: SourceLangId, scope: OcrTokenScope = OcrTokenScope.GLOBAL): ResolvedOcr {
+        // Production: the user's chosen Meiki/Paddle engine if its pack is
+        // installed — built + owned by the bridge (NOT cached here, so a selection
+        // switch never closes a live session out from under a capture). Falls
+        // through to the ML Kit floor (cached; thread-safe, no native teardown).
+        // This is the single point where the real chosen→floor→empty fallback is
+        // observable, so it reports the resolved backend alongside the engine.
+        OcrModelManager.engineForSelected(id, scope)?.let { (backend, engine) ->
+            return ResolvedOcr(engine, backend)
+        }
+        val profile = SourceLanguageProfiles[id]
+        // A no-floor language (Cyrillic etc.) reaches here only if its mandatory
+        // recognizer pack is absent — selection gates against that (see
+        // OcrModelManager.isFullyInstalled), so this is defense-in-depth: return an
+        // empty engine (no OCR) instead of NPE-ing on a null floor, and leave a
+        // breadcrumb so a gate hole is diagnosable rather than silently text-less.
+        val floor = profile.mlKitFloor ?: run {
+            Log.w(TAG, "no OCR backend for '${id.code}' (no ML Kit floor, pack absent); returning empty engine")
+            return ResolvedOcr(EmptyOcrEngine, null)
+        }
+        return ResolvedOcr(engines.getOrPut(floor) { create(floor) }, floor)
+    }
+
+    /** Close + drop every cached engine. Caller must guarantee no in-flight OCR. */
+    fun closeAll() {
+        val snapshot = engines.keys.toList()
+        for (backend in snapshot) {
+            engines.remove(backend)?.close()
+        }
+        OcrModelManager.closeAll()
+    }
+
+    private fun create(backend: OcrBackend): OcrEngine = when (backend) {
+        OcrBackend.MLKitJapanese -> MlKitOcr(JapaneseTextRecognizerOptions.Builder().build())
+        OcrBackend.MLKitLatin -> MlKitOcr(TextRecognizerOptions.DEFAULT_OPTIONS)
+        OcrBackend.MLKitChinese -> MlKitOcr(ChineseTextRecognizerOptions.Builder().build())
+        OcrBackend.MLKitKorean -> MlKitOcr(KoreanTextRecognizerOptions.Builder().build())
+        OcrBackend.MLKitDevanagari -> MlKitOcr(DevanagariTextRecognizerOptions.Builder().build())
+        is OcrBackend.Tesseract -> error("Tesseract OCR backend not yet implemented (Phase 5)")
+        // Meiki/Paddle are detector+recognizer composites built via their bridges
+        // in engineFor (Phase 2 resolution), never through this ML-Kit factory.
+        is OcrBackend.Meiki -> error("Meiki built via MeikiBridge in engineFor, not create()")
+        is OcrBackend.Paddle -> error("Paddle built via PaddleOcrBridge in engineFor, not create()")
+    }
+
+    /** No-OCR engine for a source language with no usable backend (a no-floor
+     *  language whose recognizer pack isn't installed). Yields zero regions so the
+     *  pipeline degrades to "no text" rather than crashing on a null floor.
+     *  Reaching this is a gate failure (see [engineFor]); the Log.w there is the
+     *  breadcrumb. */
+    private object EmptyOcrEngine : OcrEngine {
+        override val capabilities = OcrCapabilities(
+            orientation = OcrOrientationSupport.HORIZONTAL_ONLY,
+            emitsCharBoxes = false,
+            emitsElementBoxes = false,
+            wholeRegionInput = false,
+            threadSafe = true,
+            selfPreprocesses = true,
+            emitsSubLineBoxes = false,
+        )
+        override suspend fun recognize(image: OcrImage): List<RecognizedRegion> = emptyList()
+        override fun close() {}
+    }
+
+    private companion object {
+        const val TAG = "OcrEngineRegistry"
+    }
+}

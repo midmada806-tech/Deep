@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <!-- Status / hint text (shown when idle or processing) -->
+    <LinearLayout
+        android:id="@+id/statusContainer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:paddingHorizontal="24dp"
+        android:visibility="visible">
+
+        <TextView
+            android:id="@+id/tvStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:text="@string/status_idle"
+            android:textColor="?attr/ptTextHint"
+            android:textSize="24sp" />
+
+        <TextView
+            android:id="@+id/tvStatusHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:text="@string/status_hold_hint"
+            android:textColor="?attr/ptTextHint"
+            android:textSize="24sp"
+            android:layout_marginTop="28dp"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/tvLiveHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:textColor="?attr/ptTextHint"
+            android:textSize="24sp"
+            android:layout_marginTop="28dp"
+            android:visibility="gone" />
+
+    </LinearLayout>
+
+    <!-- Results scroll view (hidden until first translation) -->
+    <ScrollView
+        android:id="@+id/resultsContent"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:fillViewport="true"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:id="@+id/resultsScrollContent"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="@dimen/pt_section_h_padding"
+            android:paddingTop="0dp"
+            android:paddingBottom="8dp">
+
+            <!-- ══════════════════════════════════════════════════════ -->
+            <!-- TRANSLATION                                           -->
+            <!-- ══════════════════════════════════════════════════════ -->
+
+            <include layout="@layout/section_target" />
+
+            <!-- ══════════════════════════════════════════════════════ -->
+            <!-- SOURCE (Original)                                     -->
+            <!-- ══════════════════════════════════════════════════════ -->
+
+            <include layout="@layout/section_source" />
+
+            <!-- ══════════════════════════════════════════════════════ -->
+            <!-- WORDS                                                 -->
+            <!-- ══════════════════════════════════════════════════════ -->
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingTop="@dimen/pt_group_gap"
+                android:paddingBottom="8dp"
+                android:paddingStart="4dp"
+                android:paddingEnd="4dp">
+
+                <TextView
+                    android:id="@+id/labelWords"
+                    style="@style/Text.PT.GroupHeader"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/section_words" />
+
+                <ImageButton
+                    android:id="@+id/btnToggleWords"
+                    android:layout_width="36dp"
+                    android:layout_height="32dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/cd_toggle_words_visibility"
+                    android:src="@drawable/ic_visibility"
+                    app:tint="?attr/ptTextMuted" />
+
+            </LinearLayout>
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardWords"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:cardBackgroundColor="?attr/ptCard"
+                app:cardCornerRadius="@dimen/pt_radius"
+                app:cardElevation="0dp"
+                app:strokeColor="?attr/ptDivider"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:id="@+id/wordsContent"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/tvMainWordsLoading"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:paddingHorizontal="@dimen/pt_row_h_padding"
+                        android:paddingVertical="@dimen/pt_row_v_padding"
+                        android:text="@string/words_loading"
+                        android:textColor="?attr/ptTextHint"
+                        android:textSize="13sp"
+                        android:visibility="gone" />
+
+                    <LinearLayout
+                        android:id="@+id/mainWordsContainer"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical" />
+
+                    <TextView
+                        android:id="@+id/tvNoWords"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:paddingHorizontal="@dimen/pt_row_h_padding"
+                        android:paddingVertical="@dimen/pt_row_v_padding"
+                        android:text="@string/words_none"
+                        android:textColor="?attr/ptTextHint"
+                        android:textSize="13sp"
+                        android:visibility="gone" />
+
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Action buttons row -->
+            <LinearLayout
+                android:id="@+id/resultActionButtons"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginTop="20dp"
+                android:layout_marginBottom="12dp"
+                android:visibility="gone">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnResultClear"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="48dp"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
+                    android:text="@string/btn_clear"
+                    android:textAllCaps="false"
+                    android:textSize="14sp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    app:strokeColor="?attr/ptTextMuted"
+                    app:cornerRadius="6dp" />
+
+            </LinearLayout>
+
+        </LinearLayout>
+
+    </ScrollView>
+
+</FrameLayout>

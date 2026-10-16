@@ -1,0 +1,443 @@
+package com.playtranslate.ui
+
+import android.content.Context
+import android.graphics.Color
+import android.graphics.PixelFormat
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.text.TextUtils
+import android.util.TypedValue
+import android.view.Gravity
+import android.view.InputDevice
+import android.view.MotionEvent
+import android.view.View
+import android.view.WindowManager
+import android.widget.FrameLayout
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.TextView
+import androidx.appcompat.content.res.AppCompatResources
+import androidx.core.graphics.drawable.DrawableCompat
+import com.playtranslate.overlay.OverlayHost
+import com.playtranslate.overlay.OverlayPlacement
+import com.playtranslate.overlay.WindowChurnGate
+import com.playtranslate.R
+import androidx.core.graphics.toColorInt
+
+/**
+ * Overlay popup showing a Japanese word lookup result.
+ * Left 1/4: word (kanji) + furigana. Middle: scrollable definitions + frequency.
+ * Right: Anki button (if installed). Dismissable via tap outside.
+ */
+class WordLookupPopup(
+    val ctx: Context,
+    private val wm: WindowManager,
+    /** Display id this popup is shown on. Used so the popup gets blanked
+     *  during clean captures of that display. Set to [Display.DEFAULT_DISPLAY]
+     *  for activity-window callers (the registry doesn't track those). */
+    private val displayId: Int = android.view.Display.DEFAULT_DISPLAY,
+    /** Overlay host to add the popup window through. Null = attach directly to
+     *  the activity window (TYPE_APPLICATION_PANEL) for in-app callers. */
+    private val overlayHost: OverlayHost? = null,
+) {
+    private var popupView: View? = null
+    var onDismiss: (() -> Unit)? = null
+    var onAnkiTap: (() -> Unit)? = null
+    var onOpenTap: (() -> Unit)? = null
+    /** Suppresses onDismiss callback during show()'s internal dismiss(). */
+    private var suppressDismissCallback = false
+
+    /** Whether to show the Anki button (set before first show). */
+    var showAnkiButton = false
+
+    /** Whether to show the "open in app" button (set before first show). */
+    var showOpenButton = false
+
+    /** True when there's no [overlayHost] — attach directly to the activity
+     *  window (TYPE_APPLICATION_PANEL) instead of through a backend host. */
+    private val useActivityWindow: Boolean get() = overlayHost == null
+
+    /** Vertical gap between finger position and popup edge (dp). Default 40. */
+    var verticalMarginDp = 40
+
+    /** The word currently displayed — used to skip redundant redraws. */
+    var currentWord: String? = null
+        private set
+
+    private val density = ctx.resources.displayMetrics.density
+    private fun dp(v: Int) = (v * density).toInt()
+
+    private val arrowSizePx = dp(10)
+    private val popupCornerRadius = dp(12).toFloat()
+    private val bgColor = "#242424".toColorInt()
+    private val ankiColumnW = dp(44)
+
+    /** Returns true if a popup is attached after this call (newly added or
+     *  already showing the same word). Returns false if [WindowManager.addView]
+     *  failed — callers in the drag-flow propagate this so a failed show
+     *  doesn't get treated as a successful lookup. */
+    fun show(
+        word: String,
+        reading: String?,
+        senses: List<SenseDisplay>,
+        freqScore: Int,
+        isCommon: Boolean = false,
+        screenX: Int, screenY: Int,
+        screenW: Int, screenH: Int,
+        anchorHeight: Int = 0,
+        label: String? = null
+    ): Boolean {
+        // Skip full redraw if same word is already showing
+        if (word == currentWord && popupView != null) return true
+
+        suppressDismissCallback = true
+        dismiss()
+        suppressDismissCallback = false
+        currentWord = word
+
+        val baseW = (screenW * 0.85f).toInt().coerceAtMost(dp(360))
+        val hasRightButton = showAnkiButton || showOpenButton
+        val popupW = if (hasRightButton) baseW + ankiColumnW else baseW
+        val maxCardH = dp(160)
+        val minCardH = dp(64)
+        val margin = dp(verticalMarginDp)
+
+        // Build card first so we can measure its desired height
+        val card = buildCardView(word, reading, senses, freqScore, isCommon, popupW, label)
+        val widthSpec = View.MeasureSpec.makeMeasureSpec(popupW, View.MeasureSpec.EXACTLY)
+        val heightSpec = View.MeasureSpec.makeMeasureSpec(maxCardH, View.MeasureSpec.AT_MOST)
+        card.measure(widthSpec, heightSpec)
+        val cardH = card.measuredHeight.coerceIn(minCardH, maxCardH)
+
+        val totalH = cardH + arrowSizePx
+
+        // Decide if popup goes above or below anchor
+        val aboveFinger = screenY - totalH - margin >= 0
+        val yRaw = if (aboveFinger) {
+            screenY - totalH - margin
+        } else {
+            screenY + anchorHeight + margin
+        }
+        val x = (screenX - popupW / 2).coerceIn(0, screenW - popupW)
+        val y = yRaw.coerceIn(0, screenH - totalH)
+
+        val arrowRelX = (screenX - x).coerceIn(arrowSizePx, popupW - arrowSizePx)
+
+        val windowType = if (useActivityWindow)
+            WindowManager.LayoutParams.TYPE_APPLICATION_PANEL
+        else
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+
+        // Build popup with arrow. The popup window itself receives
+        // ACTION_OUTSIDE for taps landing beyond its bounds (via
+        // FLAG_WATCH_OUTSIDE_TOUCH on the window params below). That
+        // outside notification is non-consuming — the real touch still
+        // flows through to the underlying activity window, so tapping a
+        // new word in ClickableTextView dismisses the current popup AND
+        // selects the new word in a single tap.
+        val container = FrameLayout(ctx).apply {
+            isFocusable = true
+            isFocusableInTouchMode = true
+            // ACTION_OUTSIDE is the system's "user touched outside this
+            // window" notification — not a click on this view. There's no
+            // accessibility-click action to mirror; TalkBack users dismiss
+            // via the back gesture (which fires Popup#setOnDismissListener).
+            @android.annotation.SuppressLint("ClickableViewAccessibility")
+            setOnTouchListener { _, event ->
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_OUTSIDE -> {
+                        dismiss()
+                        // Do not consume — the real touch continues to the
+                        // underlying window.
+                        false
+                    }
+                    // Touches inside the popup bounds fall through to the
+                    // child views so buttons (Anki / Open) still register.
+                    else -> false
+                }
+            }
+            // Dismiss on joystick movement (analog stick beyond dead zone).
+            // Requires the container to have window focus, so the popup
+            // window below is marked focusable.
+            setOnGenericMotionListener { _, event ->
+                if (event.source and InputDevice.SOURCE_JOYSTICK == InputDevice.SOURCE_JOYSTICK
+                    && event.action == MotionEvent.ACTION_MOVE
+                ) {
+                    val axisX = event.getAxisValue(MotionEvent.AXIS_X)
+                    val axisY = event.getAxisValue(MotionEvent.AXIS_Y)
+                    if (axisX * axisX + axisY * axisY > 0.25f) {
+                        dismiss()
+                        true
+                    } else false
+                } else false
+            }
+        }
+
+        // Arrow view
+        val arrow = ArrowView(ctx, bgColor, pointsDown = aboveFinger).apply {
+            layoutParams = FrameLayout.LayoutParams(arrowSizePx * 2, arrowSizePx).apply {
+                gravity = if (aboveFinger) Gravity.BOTTOM else Gravity.TOP
+                leftMargin = arrowRelX - arrowSizePx
+            }
+        }
+
+        card.layoutParams = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            cardH
+        ).apply {
+            if (aboveFinger) {
+                topMargin = 0
+            } else {
+                topMargin = arrowSizePx
+            }
+        }
+
+        container.addView(card)
+        container.addView(arrow)
+
+        val popupParams = WindowManager.LayoutParams(
+            popupW, totalH,
+            windowType,
+            // FLAG_NOT_TOUCH_MODAL is REQUIRED alongside
+            // FLAG_WATCH_OUTSIDE_TOUCH. Without it, a focusable window is
+            // touch-modal by default and captures every touch system-wide,
+            // locking the app. The outside-touch notification is an
+            // orthogonal mechanism from touch modality.
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
+                // Styled definitions host a WebView; service-added windows
+                // don't inherit the manifest's hardware acceleration.
+                WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            this.x = x
+            this.y = y
+        }
+
+        if (overlayHost != null) {
+            // Backend overlay host — registers the window so it's blanked
+            // alongside the icon/magnifier during clean screenshots. The host
+            // also mirrors the game's system-bar state onto this focusable
+            // window, so taking focus doesn't flash the nav pill over an
+            // immersive game.
+            if (!overlayHost.addOverlayWindow(container, wm, popupParams, displayId, OverlayPlacement.Fixed)) return false
+        } else {
+            // Activity-window popup: the focused panel becomes the system-bar
+            // control target just like an overlay would, so mirror the hosting
+            // activity's bar state (read from its decor BEFORE our window can
+            // affect it) — else opening the popup un-hides bars the activity
+            // keeps hidden.
+            val activityHiddenBars = OverlayHost.hiddenSystemBarsOfActivity(ctx)
+            try { wm.addView(container, popupParams) } catch (_: Exception) { return false }
+            OverlayHost.mirrorSystemBars(container, activityHiddenBars)
+        }
+        // Request window focus so onGenericMotionListener receives joystick
+        // events (the previous architecture got focus via the backdrop).
+        container.requestFocus()
+        popupView = container
+        return true
+    }
+
+    fun dismiss() {
+        val view = popupView
+        if (view != null) {
+            if (overlayHost != null) {
+                overlayHost.removeOverlayWindow(view)
+            } else {
+                // Activity-window popup: deliberately NOT gated through
+                // WindowChurnGate — a destroy deferred past the hosting
+                // activity's finish would trip the framework's
+                // window-leak detection. Its add still ticks the gate's
+                // quiet clock above.
+                try { wm.removeView(view) } catch (_: Exception) {}
+            }
+        }
+        popupView = null
+        currentWord = null
+        if (!suppressDismissCallback) onDismiss?.invoke()
+    }
+
+    val isShowing: Boolean get() = popupView != null
+
+    private fun buildCardView(
+        word: String,
+        reading: String?,
+        senses: List<SenseDisplay>,
+        freqScore: Int,
+        isCommon: Boolean,
+        width: Int,
+        label: String? = null
+    ): View {
+        val bg = GradientDrawable().apply {
+            setColor(bgColor)
+            cornerRadius = popupCornerRadius
+        }
+
+        val root = FrameLayout(ctx).apply {
+            background = bg
+            setPadding(dp(12), dp(8), dp(12), dp(12))
+        }
+
+        val hLayout = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        // Left 1/4: word + furigana only
+        val leftW = ((width - dp(24)) * 0.25f).toInt()
+        val leftCol = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(leftW, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                gravity = Gravity.CENTER_VERTICAL
+            }
+        }
+
+        if (reading != null && reading != word) {
+            leftCol.addView(TextView(ctx).apply {
+                text = reading
+                setTextColor("#A0A0A0".toColorInt())
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                gravity = Gravity.CENTER
+                maxLines = 2
+                ellipsize = TextUtils.TruncateAt.END
+            })
+        }
+
+        leftCol.addView(TextView(ctx).apply {
+            text = word
+            setTextColor("#EFEFEF".toColorInt())
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            maxLines = 1
+            setAutoSizeTextTypeUniformWithConfiguration(
+                10, 22, 1, TypedValue.COMPLEX_UNIT_SP
+            )
+        })
+
+        hLayout.addView(leftCol)
+
+        // Divider
+        hLayout.addView(View(ctx).apply {
+            setBackgroundColor("#2E2E2E".toColorInt())
+            layoutParams = LinearLayout.LayoutParams(dp(1), LinearLayout.LayoutParams.MATCH_PARENT).apply {
+                setMargins(dp(8), 0, dp(8), 0)
+            }
+        })
+
+        // Middle: scrollable definitions + frequency
+        val rightScroll = ScrollView(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            isVerticalScrollBarEnabled = true
+            isFillViewport = false
+        }
+
+        val rightCol = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 0, dp(4), 0)
+        }
+
+        // Common badge + frequency stars row
+        if (isCommon || freqScore > 0) {
+            val metaRow = LinearLayout(ctx).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, 0, 0, dp(4))
+            }
+            if (isCommon) {
+                val badge = TextView(ctx).apply {
+                    text = ctx.getString(R.string.word_detail_common)
+                    setTextColor("#A0A0A0".toColorInt())
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 9f)
+                    typeface = Typeface.DEFAULT_BOLD
+                    setPadding(dp(5), dp(1), dp(5), dp(1))
+                    background = GradientDrawable().apply {
+                        setColor("#383838".toColorInt())
+                        cornerRadius = dp(4).toFloat()
+                    }
+                }
+                metaRow.addView(badge)
+            }
+            if (freqScore > 0) {
+                metaRow.addView(TextView(ctx).apply {
+                    text = "★".repeat(freqScore.coerceAtMost(5))
+                    setTextColor("#606060".toColorInt())
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+                    if (isCommon) setPadding(dp(6), 0, 0, 0)
+                })
+            }
+            rightCol.addView(metaRow)
+        }
+
+        if (label != null) {
+            rightCol.addView(TextView(ctx).apply {
+                text = label
+                setTextColor("#D4A017".toColorInt())
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+                typeface = Typeface.DEFAULT_BOLD
+                setPadding(0, 0, 0, dp(4))
+            })
+        }
+
+        senses.forEachIndexed { i, sense ->
+            if (sense.pos.isNotEmpty()) {
+                rightCol.addView(TextView(ctx).apply {
+                    text = if (sense.imported) sense.pos.joinToString(" · ")
+                    else ctx.localizePos(sense.pos)
+                    setTextColor("#A0A0A0".toColorInt())
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+                    typeface = Typeface.DEFAULT_BOLD
+                    if (i > 0) setPadding(0, dp(6), 0, 0)
+                })
+            }
+            rightCol.addView(TextView(ctx).apply {
+                text = ctx.getString(R.string.word_detail_numbered_definition, i + 1, sense.definition)
+                setTextColor("#EFEFEF".toColorInt())
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            })
+        }
+
+        rightScroll.addView(rightCol)
+        hLayout.addView(rightScroll)
+
+        // Right-side button column (Anki or Open in app)
+        if (showAnkiButton || showOpenButton) {
+            // Divider before button
+            hLayout.addView(View(ctx).apply {
+                setBackgroundColor("#2E2E2E".toColorInt())
+                layoutParams = LinearLayout.LayoutParams(dp(1), LinearLayout.LayoutParams.MATCH_PARENT).apply {
+                    setMargins(dp(8), 0, dp(4), 0)
+                }
+            })
+
+            val iconRes = if (showAnkiButton) R.drawable.ic_card_stack_add else R.drawable.ic_open_in_new
+            val onTap = if (showAnkiButton) onAnkiTap else onOpenTap
+            val icon = ImageView(ctx).apply {
+                val drawable = AppCompatResources.getDrawable(ctx, iconRes)?.mutate()
+                if (drawable != null) {
+                    DrawableCompat.setTint(drawable, "#A0A0A0".toColorInt())
+                    setImageDrawable(drawable)
+                }
+                setPadding(dp(7), dp(4), dp(1), dp(4))
+                layoutParams = LinearLayout.LayoutParams(ankiColumnW - dp(13), LinearLayout.LayoutParams.MATCH_PARENT).apply {
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                scaleType = ImageView.ScaleType.CENTER_INSIDE
+                setOnClickListener { onTap?.invoke() }
+            }
+            hLayout.addView(icon)
+        }
+
+        root.addView(hLayout)
+
+        return root
+    }
+
+}

@@ -1,0 +1,486 @@
+package com.playtranslate.language
+
+import android.content.Context
+import com.playtranslate.dictionary.Deinflector
+import com.playtranslate.dictionary.DictionaryManager
+import com.playtranslate.dictionary.DictionaryManager.Companion.ReglobSpan
+import com.playtranslate.dictionary.JaToken
+import com.playtranslate.dictionary.SentenceAnnotator
+import com.playtranslate.dictionary.SudachiJapaneseTokenizer
+import com.playtranslate.dictionary.deinflect.JapaneseDeinflector
+import com.playtranslate.model.selectHeadword
+import com.playtranslate.model.CharacterDetail
+import com.playtranslate.model.DictionaryResponse
+import com.playtranslate.model.KanjiDetail
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+/**
+ * Japanese source-language engine. Thin forwarder over the existing
+ * [DictionaryManager] singleton and [Deinflector] object — there's no new
+ * runtime state here, just an interface-matching façade that Phase 1+ can
+ * route calls through without touching the underlying implementation.
+ *
+ * [close] releases JA's process-scoped native handles — the Sudachi Provider
+ * mmap and the [DictionaryManager] SQLite handle. Pack uninstall evicts the
+ * engine via [SourceLanguageEngines.releaseForPack] and then deletes the pack
+ * dir, so close() is the contract point that has to drop those handles first.
+ * Both reopen lazily, so closing is safe even if another reference survives.
+ */
+class JapaneseEngine(private val appContext: Context) : SourceLanguageEngine {
+
+    override val profile: SourceLanguageProfile = SourceLanguageProfiles[SourceLangId.JA]
+
+    private val dict: DictionaryManager = DictionaryManager.get(appContext)
+
+    private val yomitan = YomitanEnrichment(appContext, SourceLangId.JA.yomitanConsumingLang())
+
+    init {
+        // Point the Sudachi tokenizer at the pack's tokenizer/ directory BEFORE
+        // any engine method runs. The Provider is process-scoped and lazy; doing
+        // this at engine construction (which SourceLanguageEngines.get guarantees
+        // happens before any tokenize/annotateForHintText call) closes the
+        // cold-start race where a UI caller on the main dispatcher could fire
+        // before MainActivity's IO-dispatched preload() set the pack dir. If the
+        // installed pack predates ja-v3 (no system_*.dic), the lazy build throws
+        // and preload() reports TokenizerInitFailed. Ctor is just path
+        // computation, no disk I/O.
+        SudachiJapaneseTokenizer.Provider.initPackDir(
+            LanguagePackStore.dirFor(appContext, SourceLangId.JA).resolve("tokenizer")
+        )
+    }
+
+    override suspend fun preload(): PreloadResult {
+        if (!LanguagePackStore.isInstalled(appContext, SourceLangId.JA)) {
+            return PreloadResult.PackMissing
+        }
+        val db = dict.preload()
+        if (db == null) {
+            // SQLite open failed — dict.sqlite missing, truncated, or
+            // schema-stale. Confirmed on-disk issue. Safe to uninstall.
+            return PreloadResult.PackCorrupt("JA dict.sqlite failed to open")
+        }
+        val warmup = runCatching { SudachiJapaneseTokenizer.Provider.preload() }
+        if (warmup.isFailure) {
+            // Sudachi init/warm-up threw. Most likely the installed pack has no
+            // system_*.dic yet (pre-ja-v3), but could also be OOM or other
+            // runtime pressure. Don't auto-delete; let the caller log + retry
+            // (the launch-time PackUpgradeOrchestrator drives the ja-v3 upgrade).
+            return PreloadResult.TokenizerInitFailed(
+                "Sudachi warm-up failed: ${warmup.exceptionOrNull()?.message ?: "unknown"}"
+            )
+        }
+        return PreloadResult.Success
+    }
+
+    // tokenize() is a projection of annotate(WORDS) — see the override below
+    // next to annotate(). The imported-dict phrase oracle rides inside
+    // annotate's re-glob call.
+
+    override suspend fun searchPrefix(query: String, limit: Int): List<TokenSpan> =
+        dict.searchPrefix(query, limit).map {
+            TokenSpan(surface = it.surface, lookupForm = it.lookupForm, reading = it.reading)
+        }
+
+    /** Pack lookup, then shared Yomitan enrichment: imported term groups merge
+     *  in (the distinct texts of [JapaneseDeinflector.candidates], in order,
+     *  are the fallback forms), with pitch + frequency attached.
+     *  [YomitanEnrichment] is a verbatim move of the pre-extraction inline
+     *  path. */
+    override suspend fun lookup(word: String, reading: String?): DictionaryResponse? =
+        yomitan.applyTo(
+            dict.lookup(word, reading),
+            word, reading,
+            fallbackForms = JapaneseDeinflector.candidates(word).map { it.text }.distinct(),
+        )
+
+    /**
+     * Per-character detail merged from two sources: the first imported
+     * Yomitan kanji dictionary containing the character wins the lexical
+     * content (meanings; readings when non-empty), while the built-in
+     * KANJIDIC2 pack stays the floor — filling whatever the import lacks
+     * and always supplying the numeric stats (imports carry theirs under
+     * dictionary-specific keys we don't interpret). Gloss-less characters
+     * return null exactly as before imports existed: a row with readings
+     * but no meaning isn't worth a breakdown slot.
+     */
+    override suspend fun lookupCharacter(literal: Char, targetLang: String): CharacterDetail? {
+        val base = dict.lookupKanji(literal, targetLang)
+        val imported = yomitan.importedKanji(literal)
+        val meanings: List<String>
+        val meaningsLang: String
+        if (imported != null && imported.meanings.isNotEmpty()) {
+            meanings = imported.meanings
+            meaningsLang = imported.meaningsLang
+        } else {
+            meanings = base?.meanings.orEmpty()
+            meaningsLang = base?.meaningsLang ?: "en"
+        }
+        if (meanings.isEmpty()) return null
+        // A combined (unsplit) readings list replaces BOTH labelled lines —
+        // mixing KANJIDIC2's on readings back in would duplicate readings
+        // the combined list already carries.
+        val combined = imported?.combinedReadings.orEmpty()
+        return KanjiDetail(
+            literal = literal,
+            meanings = meanings,
+            meaningsLang = meaningsLang,
+            onReadings = if (combined.isNotEmpty()) emptyList()
+                else imported?.onReadings?.ifEmpty { null } ?: base?.onReadings.orEmpty(),
+            kunReadings = if (combined.isNotEmpty()) emptyList()
+                else imported?.kunReadings?.ifEmpty { null } ?: base?.kunReadings.orEmpty(),
+            jlpt = base?.jlpt ?: 0,
+            grade = base?.grade ?: 0,
+            strokeCount = base?.strokeCount ?: 0,
+            frequencies = yomitan.kanjiFrequencies(literal),
+            combinedReadings = combined,
+        )
+    }
+
+    /** FULL-depth annotations for the live overlay's per-cycle lines;
+     *  cleared on [close] (pack swap) and generation-checked against
+     *  Yomitan imports. */
+    private val annotationCache = AnnotationCache()
+
+    /** Per-word resolution memo for FULL-depth annotations. Resolving is the
+     *  one costly part of annotating (2–3 indexed queries per unique word,
+     *  ~10 ms of a ~20 ms cold line on the Thor; tokenizing a whole dialogue
+     *  box is well under a millisecond), and the live overlay annotates a
+     *  group's full text on every typewriter step, so without this each step
+     *  would re-query every completed line's words. With it only the
+     *  frontier's new words query, whatever the group's height. A pure
+     *  function of the key given the two stores: generation-gated like the
+     *  annotation cache, cleared with it on [close]. Only resolutions that
+     *  found an entry are memoized: a lookup that fails to open the pack's
+     *  database returns the same null as a genuine miss, and a memoized
+     *  null would keep a frequent word unresolved until the engine closes
+     *  (Codex, 2026-10-08). A miss re-queries each time, a few indexed
+     *  queries per out-of-vocabulary word. */
+    private val resolutionCache =
+        GenerationLru<SentenceAnnotator.ResolutionKey, SentenceAnnotator.WordResolution>(1024)
+
+    override suspend fun annotate(text: String, depth: AnnotationDepth): SentenceAnnotation {
+        if (depth == AnnotationDepth.FULL) {
+            annotationCache.get(text)?.let { return it }
+        }
+        val result = withContext(Dispatchers.Default) {
+            // Generation captured BEFORE any Yomitan-dependent work (the
+            // phrase oracle, resolution fallbacks): the stamp must describe
+            // when the CONTENT was read. A mutation committing mid-annotation
+            // bumps past this captured value, so the result self-invalidates
+            // at every isImportCurrent() gate — over-invalidation at worst
+            // (one wasted re-annotate), never a stale annotation blessed as
+            // current (adversarial-review race: stamping current() AFTER the
+            // work did exactly that).
+            val generation = AnnotationGenerations.current()
+            val tokens = SudachiJapaneseTokenizer.Provider.analyze(text)
+            if (tokens.isEmpty()) return@withContext SentenceAnnotation.plain(text, profile.id)
+            val reglob =
+                if (depth != AnnotationDepth.TOKENS) {
+                    dict.reglobSpansForTokens(tokens, yomitan.phraseOracle())
+                } else null
+            val resolutions =
+                if (reglob == null || depth != AnnotationDepth.FULL) emptyMap()
+                else SentenceAnnotator.resolutionKeys(reglob).associateWith { key ->
+                    resolutionCache.get(key)
+                        ?: resolveWord(key).also {
+                            if (it.entryRef != null) resolutionCache.put(key, it, generation)
+                        }
+                }
+            val annotation = SentenceAnnotator.annotate(
+                text, profile.id, tokens, reglob, resolutions,
+                importGeneration = generation,
+            )
+            // Pitch rides display depths; WORDS is the tokenize projection's
+            // depth and never renders ruby.
+            if (depth == AnnotationDepth.WORDS) annotation else applyPitch(annotation)
+        }
+        if (depth == AnnotationDepth.FULL) annotationCache.put(result)
+        return result
+    }
+
+    override suspend fun tokenize(text: String): List<TokenSpan> =
+        annotate(text, AnnotationDepth.WORDS).spans
+            .filter { it.lookupForm != null }
+            .map {
+                TokenSpan(
+                    surface = it.surface, lookupForm = it.lookupForm!!,
+                    reading = it.lookupHint, inflections = it.inflections,
+                )
+            }
+
+    /**
+     * Member words of a fused headword, at WORD granularity: the
+     * [headword]'s Sudachi short units are re-globbed through the same
+     * JMdict-gated fusing the tokenizer uses, in MEMBER mode — the
+     * headword's own join excluded, and every expression-class join
+     * excluded too — so member WORDS reassemble (やさしい日本語 → 日本語,
+     * not 日本+語) while member PHRASES stay split (瞬く間に → 瞬く and 間,
+     * not 瞬く間, which is a JMdict entry but an exp one): a component is
+     * a word, and a phrase is not a word. Tokens the re-glob's emission
+     * drops (it keeps content singles only — suffix-tagged members like
+     * 次第 in 手当たり次第 would vanish) are unioned back in when
+     * kanji-bearing: the KANJI gate, not the UniDic category, is the
+     * membership signal here — kana morphemes are where the grammar noise
+     * lives, and it's what keeps かもしれない member-free while idioms
+     * qualify. The category is read for two other verdicts, both on the
+     * UNITS the re-glob produced ([memberUnits]): a standalone
+     * particle/auxiliary unit marks the headword a PHRASE (loose gate)
+     * whatever JMdict tagged it, and grammar units are excused in the
+     * compound accounting ([isAccountedCompoundUnit]). Members' reading
+     * hints come from aligning [headwordReading] against their dictionary
+     * readings ([alignMemberReadings]) — the tokenizer's per-token readings
+     * are guesses that miss lexicalized phrases — falling back to the
+     * tokenizer's when nothing aligns. Callers pass the DISPLAYED headword
+     * form (`uk` entries in kana — かも知れない's 知れ must never see the
+     * gate) and its reading. Unresolvable members are filtered downstream
+     * by the row/section resolution, not here.
+     */
+    override suspend fun memberWordsOf(
+        headword: String,
+        expressionClass: Boolean,
+        headwordReading: String?,
+    ): List<TokenSpan> {
+        val tokens = withContext(Dispatchers.Default) {
+            runCatching { SudachiJapaneseTokenizer.Provider.analyze(headword) }
+                .getOrNull().orEmpty()
+        }
+        if (tokens.size < 2) return emptyList()
+        val spans = dict.reglobSpansForTokens(
+            tokens, yomitan.phraseOracle(), excludePhrases = setOf(headword),
+            excludeExpressionJoins = true,
+            // Here 行く in 連れて行く is a member word, not an auxiliary: folded,
+            // the whole headword would be one span, which the filter below drops.
+            foldAuxiliaries = false,
+        ).orEmpty()
+        val ordered = memberUnits(tokens, spans, expressionClass)
+        if (ordered.isEmpty()) return emptyList()
+        val aligned = alignedReadingHints(ordered.map { it.surface to it.lookupForm }, headword, headwordReading)
+        return ordered
+            .mapIndexedNotNull { i, m ->
+                if (!hasKanji(m.surface) || m.lookupForm == headword || m.surface == headword) null
+                else TokenSpan(surface = m.surface, lookupForm = m.lookupForm, reading = aligned?.get(i) ?: m.reading)
+            }
+            .distinctBy { it.lookupForm }
+    }
+
+    /** [DictionaryManager.alternativeKeys] for the tapped [span]'s surface,
+     *  lookup form and conjugation tags, each key as a span on the tapped
+     *  surface whose inflections are the key's whole chain. */
+    override suspend fun alternativesOf(span: TokenSpan, primaryIds: Set<Long>): List<TokenSpan> =
+        dict.alternativeKeys(span.surface, span.lookupForm, span.inflections, primaryIds).map {
+            TokenSpan(surface = span.surface, lookupForm = it.lookupForm, reading = it.reading, inflections = it.tags)
+        }
+
+    /** Reading hints for the member [units] (surface to lookupForm, in
+     *  headword order) by aligning the headword's own reading against the
+     *  units' dictionary readings — see [alignMemberReadings] for why the
+     *  tokenizer's hints can't be trusted inside a lexicalized phrase.
+     *  Kana units read as themselves; kanji units with no entry are
+     *  wildcards. Null (keep the tokenizer's hints) when there's no reading
+     *  to align against, the headword is kana, or nothing aligns. One
+     *  batched readings query, tap-time only. */
+    private suspend fun alignedReadingHints(
+        units: List<Pair<String, String>>,
+        headword: String,
+        headwordReading: String?,
+    ): List<String?>? {
+        if (headwordReading.isNullOrBlank() || !hasKanji(headword)) return null
+        val kanjiForms = units.filter { hasKanji(it.first) }.mapTo(mutableSetOf()) { it.second }
+        val readings = dict.readingsForForms(kanjiForms)
+        val alignUnits = units.map { (surface, lookupForm) ->
+            AlignUnit(
+                surface, lookupForm,
+                dictReadings = if (!hasKanji(surface)) setOf(Deinflector.katakanaToHiragana(surface))
+                else readings[lookupForm]?.takeIf { it.isNotEmpty() },
+            )
+        }
+        return alignMemberReadings(alignUnits, Deinflector.katakanaToHiragana(headwordReading))
+    }
+
+    /** Two-store resolution for one (lookupForm, occurrence-hint) pair.
+     *  Pack-first via the READINGS-ONLY path — identical entry choice to the
+     *  full lookup by shared SQL and shared headword pairing, at 2–3 indexed
+     *  queries — falling back to the full two-store lookup only on a pack
+     *  miss, where imported-dictionary synthesis may still resolve. The one
+     *  senses-bearing lookup per word now lives in the words projection
+     *  alone. */
+    private suspend fun resolveWord(
+        key: SentenceAnnotator.ResolutionKey,
+    ): SentenceAnnotator.WordResolution {
+        val entry = dict.lookupReadingsOnly(key.lookupForm, key.hint)
+            ?: lookup(key.lookupForm, key.hint)?.entries?.firstOrNull()
+            ?: return SentenceAnnotator.WordResolution(null, null)
+        val ref = entry.packId?.let { EntryRef.Pack(it) }
+            ?: EntryRef.Imported(key.lookupForm, entry.headwords.firstOrNull()?.reading)
+        val hw = entry.selectHeadword(key.lookupForm, key.lookupForm, key.hint)
+        return SentenceAnnotator.WordResolution(
+            ref, hw?.reading, written = hw?.written ?: hw?.reading,
+        )
+    }
+
+    /** Pitch on whole-word uninflected spans — the legacy hint path's
+     *  eligibility rule (coversWholeSurface && surface == dictionaryForm) at
+     *  span granularity: a single ruby part covering the whole surface of an
+     *  uninflected span. */
+    private suspend fun applyPitch(annotation: SentenceAnnotation): SentenceAnnotation {
+        val eligible = annotation.spans
+            .filter {
+                it.lookupForm != null && it.surface == it.lookupForm &&
+                    it.reading != null &&
+                    it.furigana.size == 1 && it.furigana[0].text == it.surface &&
+                    it.furigana[0].reading != null
+            }
+            .map { it.surface to it.reading!! }
+            .distinct()
+        if (eligible.isEmpty()) return annotation
+        val pitch = yomitan.pitchFor(eligible)
+        if (pitch.isEmpty()) return annotation
+        return annotation.copy(spans = annotation.spans.map { s ->
+            val p = if (s.reading != null) pitch[s.surface to s.reading] else null
+            if (p.isNullOrEmpty()) s else s.copy(pitch = p)
+        })
+    }
+
+    /** Legacy hint API, now a projection of [annotate] at TOKENS depth —
+     *  byte-parity with the old per-token path. The live overlay consumes
+     *  this until its measurement gate flips it to FULL (refactor doc §6);
+     *  the in-app binder calls [annotate] FULL directly. */
+    override suspend fun annotateForHintText(text: String): List<HintTextAnnotation> =
+        annotate(text, AnnotationDepth.TOKENS).hintAnnotations()
+
+    override suspend fun spokenForm(text: String): String =
+        withContext(Dispatchers.Default) {
+            // TTS speaks the SAME readings the display shows — audio ==
+            // display by construction. Both project from ONE FULL-depth
+            // annotation now, so dictionary-corrected compound readings
+            // (一泊 → いっぱく) are spoken, not just displayed. annotate is
+            // fail-soft: no tokenizer → one plain span → surface text.
+            val spans = annotate(text, AnnotationDepth.FULL).spans
+            if (spans.isEmpty()) text
+            else buildString { for (s in spans) append(s.reading ?: s.surface) }
+        }
+
+    override fun close() {
+        annotationCache.clear()
+        resolutionCache.clear()
+        // Release JA's process-scoped native handles so pack uninstall doesn't
+        // leak them. The engine cache only evicts (SourceLanguageEngines.
+        // releaseForPack, via LanguagePackStore.uninstall) when the pack is
+        // going away, and uninstall() closes through here and THEN deletes the
+        // pack dir — so without these closes the Sudachi mmap and the JMdict
+        // SQLite handle stay bound to the unlinked files until process death,
+        // and already-resolved engine references keep serving stale tokens /
+        // lookups. Both reopen lazily (Provider on the next engine's
+        // initPackDir, DictionaryManager on the next ensureOpen; refcounting
+        // keeps any in-flight query valid), so closing is safe even if a
+        // reference survives. PackUpgradeOrchestrator still closes both at its
+        // teardown points — now idempotent belt-and-suspenders.
+        SudachiJapaneseTokenizer.Provider.close()
+        dict.close()
+    }
+}
+
+private fun hasKanji(s: String): Boolean =
+    s.any { c -> c.code in 0x4E00..0x9FFF || c.code in 0x3400..0x4DBF }
+
+/** One unit of a fused headword as [JapaneseEngine.memberWordsOf] sees it:
+ *  a re-glob span (a fused sub-word, or a content token with its
+ *  conjugation glue folded in) or a token the re-glob left uncovered. */
+internal data class MemberUnit(
+    val order: Int,
+    val surface: String,
+    val lookupForm: String,
+    /** The tokenizer's reading hint — replaced by the aligned reading
+     *  where the headword's own reading decomposes. */
+    val reading: String?,
+    /** Every token under this unit is a particle/auxiliary — grammar, which
+     *  marks the headword a phrase and is excused in the compound
+     *  accounting. A verb with its glue folded in (分からず, 見た) is NOT
+     *  grammar: that is inflection of one word, not phrase structure. */
+    val grammar: Boolean,
+)
+
+/**
+ * The pure core of [JapaneseEngine.memberWordsOf]: the headword's units in
+ * order, or empty when the class gate refuses the decomposition. Top-level
+ * + internal so the gate is unit-testable without Sudachi or a pack.
+ *
+ * Phrase class: the caller's POS verdict, OR a STANDALONE grammar unit —
+ * the structural sign of a phrase that JMdict's tagging misses (瞬く間に and
+ * 一斉に are adv; 世の中 is exp). Read off the units, not the raw tokens:
+ * glue folded into a verb is inflection, so 思いがけない and 分からず屋
+ * are compounds, and the adversarial review's finding — any auxiliary
+ * anywhere relaxing the completeness guard, so 思いがけない rendered 思う
+ * while silently dropping がけない — cannot recur. Phrases get the loose
+ * per-member gate: 気になる's 気 and 瞬く間に's 間 are one char and
+ * load-bearing. Transparent compounds (no standalone glue, not exp —
+ * 放送番組, 図書館) decompose only when EVERY unit is accounted for
+ * ([isAccountedCompoundUnit]): a ≥2-char kanji word, rendered as a member;
+ * a ≥2-char katakana word, EXCUSED — katakana loanwords self-decode, so
+ * ペース配分 offers 配分 with no ペース row; or a grammar unit, EXCUSED.
+ * The kanji-only emission in the caller keeps every excused unit out, and
+ * an all-katakana compound emits no members at all. Any other unit turns
+ * the whole offer off: a partial decomposition of OPAQUE units misleads
+ * (図書館 → 図書 alone implies 館 is nothing — and single characters are
+ * the kanji-breakdown section's job).
+ */
+internal fun memberUnits(
+    tokens: List<JaToken>,
+    spans: List<ReglobSpan>,
+    expressionClass: Boolean,
+): List<MemberUnit> {
+    val units = mutableListOf<MemberUnit>()
+    val covered = BooleanArray(tokens.size)
+    for (s in spans) {
+        val end = (s.tokenStart + s.tokenCount).coerceAtMost(tokens.size)
+        for (i in s.tokenStart until end) covered[i] = true
+        units += MemberUnit(
+            s.tokenStart, s.surface, s.lookupForm, s.reading,
+            grammar = isGrammarRun(tokens, s.tokenStart, end),
+        )
+    }
+    tokens.forEachIndexed { i, t ->
+        if (!covered[i]) {
+            units += MemberUnit(
+                i, t.surface, t.dictionaryForm,
+                t.reading?.let(Deinflector::katakanaToHiragana),
+                grammar = t.category.isConjugationGlue,
+            )
+        }
+    }
+    val phraseClass = expressionClass || units.any { it.grammar }
+    if (!phraseClass && units.any { !isAccountedCompoundUnit(it.surface, grammar = it.grammar) }) {
+        return emptyList()
+    }
+    return units.sortedBy { it.order }
+}
+
+/** [JapaneseEngine.memberWordsOf]'s transparent-compound unit accounting: a
+ *  unit is accounted for when the member section leaves the reader either
+ *  DEFINED, already able to read it, or owed nothing — a ≥2-char
+ *  kanji-bearing word (rendered as a member row); a ≥2-char katakana word
+ *  (excused, never rendered: katakana loanwords self-decode, so ペース in
+ *  ペース配分 needs no row — the block check admits ー, and requiring one
+ *  true katakana letter keeps mark-only strings out); or a [grammar] unit
+ *  (excused: a particle/auxiliary run is not a word whose absence misleads
+ *  — the に of 瞬く間に, the も of 少しも — and the tokenizer's category,
+ *  not the unit's shape, says which units those are; shape alone would
+ *  veto them as hiragana). Hiragana CONTENT, single characters, and
+ *  mixed-script units stay unaccounted — any one of those turns the whole
+ *  compound offer off (図書館, 生ビール, 常に). Top-level + internal so the
+ *  contract is unit-testable without a Sudachi instance. */
+internal fun isAccountedCompoundUnit(surface: String, grammar: Boolean = false): Boolean =
+    grammar || (
+        surface.length >= 2 && (
+            hasKanji(surface) ||
+                (surface.all { it.code in 0x30A0..0x30FF } && surface.any { it.code in 0x30A1..0x30FA })
+            )
+        )
+
+/** Whether tokens[start until end] are ALL conjugation glue (particle /
+ *  auxiliary) — the [isAccountedCompoundUnit] `grammar` verdict for a
+ *  re-glob span. A content token folded with its glue (見+た) is not
+ *  grammar; a fused particle run (か+も) is. An empty range is not. */
+internal fun isGrammarRun(tokens: List<JaToken>, start: Int, end: Int): Boolean =
+    start < end && (start until end).all { tokens[it].category.isConjugationGlue }

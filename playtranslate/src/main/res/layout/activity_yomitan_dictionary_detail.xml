@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Read-only metadata detail for an installed Yomitan dictionary. Settings
+     sub-page chrome, but the close affordance is an "X" toolbar action on the
+     right (see menu/menu_close.xml) rather than a left nav icon. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        android:background="?attr/ptSurface"
+        app:navigationIcon="@drawable/ic_arrow_back"
+        app:navigationIconTint="?attr/ptText"
+        app:titleTextColor="?attr/ptText" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="?attr/ptDivider" />
+
+    <androidx.core.widget.NestedScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="@dimen/pt_section_h_padding"
+            android:paddingTop="4dp"
+            android:paddingBottom="20dp">
+
+            <include
+                android:id="@+id/configureHeader"
+                layout="@layout/settings_group_header" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:cardBackgroundColor="?attr/ptCard"
+                app:cardCornerRadius="@dimen/pt_radius"
+                app:cardElevation="0dp"
+                app:strokeColor="?attr/ptDivider"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:paddingHorizontal="@dimen/pt_row_h_padding"
+                        android:paddingVertical="@dimen/pt_row_v_padding">
+
+                        <TextView
+                            style="@style/Text.PT.RowTitle"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/pt_accent_label" />
+
+                        <com.playtranslate.ui.WrappingLinearLayout
+                            android:id="@+id/yomitanAccentPicker"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp" />
+                    </LinearLayout>
+
+                    <include layout="@layout/settings_row_divider" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:paddingHorizontal="@dimen/pt_row_h_padding"
+                        android:paddingVertical="@dimen/pt_row_v_padding">
+
+                        <TextView
+                            style="@style/Text.PT.RowTitle"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/yomitan_alias_label" />
+
+                        <EditText
+                            android:id="@+id/etYomitanAlias"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:background="?attr/ptSurface"
+                            android:hint="@string/yomitan_alias_hint"
+                            android:importantForAutofill="no"
+                            android:imeOptions="actionDone|flagNoFullscreen|flagNoExtractUi"
+                            android:inputType="text"
+                            android:padding="10dp"
+                            android:singleLine="true"
+                            android:textColor="?attr/ptText"
+                            android:textColorHint="?attr/ptTextHint"
+                            android:textSize="15sp" />
+                    </LinearLayout>
+
+                    <!-- The two rows below can each be hidden (language: only for
+                         dictionaries whose index.json declares no sourceLanguage;
+                         auto-update: only for dictionaries that declare update
+                         capability), so each owns the divider ABOVE it — the card
+                         never ends on a dangling divider. -->
+                    <include
+                        android:id="@+id/sourceLangDivider"
+                        layout="@layout/settings_row_divider" />
+
+                    <include
+                        android:id="@+id/rowYomitanSourceLang"
+                        layout="@layout/settings_row_value" />
+
+                    <include
+                        android:id="@+id/autoUpdateDivider"
+                        layout="@layout/settings_row_divider" />
+
+                    <include
+                        android:id="@+id/rowYomitanAutoUpdate"
+                        layout="@layout/settings_row_switch" />
+
+                    <include
+                        android:id="@+id/checkUpdatesDivider"
+                        layout="@layout/settings_row_divider" />
+
+                    <include
+                        android:id="@+id/rowYomitanCheckUpdates"
+                        layout="@layout/settings_row_nav" />
+
+                </LinearLayout>
+
+            </com.google.android.material.card.MaterialCardView>
+
+            <include
+                android:id="@+id/metadataHeader"
+                layout="@layout/settings_group_header" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:cardBackgroundColor="?attr/ptCard"
+                app:cardCornerRadius="@dimen/pt_radius"
+                app:cardElevation="0dp"
+                app:strokeColor="?attr/ptDivider"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:id="@+id/metadataRows"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical" />
+
+            </com.google.android.material.card.MaterialCardView>
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+</LinearLayout>

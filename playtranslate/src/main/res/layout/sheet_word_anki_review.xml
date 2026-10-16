@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Word Anki review sheet. Hosts both Word and (optional) Sentence
+     card flows. The toolbar slot to the right of the back button shows
+     either a Sentence/Word segmented control (when sentence data is
+     present) or a plain "Add to <Deck>" title. -->
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="4dp"
+        android:paddingEnd="16dp">
+
+        <ImageButton
+            android:id="@+id/btnBackWordAnki"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="4dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_arrow_back"
+            app:tint="?attr/ptTextMuted"
+            android:contentDescription="@string/cd_back" />
+
+        <TextView
+            android:id="@+id/tvWordAnkiSheetTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:textColor="?attr/ptText"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:text="@string/anki_sheet_title_new_card" />
+
+        <FrameLayout
+            android:id="@+id/wordAnkiToolbarToggle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:visibility="gone" />
+
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="?attr/ptDivider" />
+
+    <androidx.core.widget.NestedScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
+
+        <!-- Stable scroll column with fixed-id hosts: deck row goes
+             into the deck host, the SentenceAnkiContentFragment
+             attaches to the sentence host (XML id so FragmentManager
+             can re-target the same container after rotation), and the
+             word-mode content is built into the word host. -->
+        <LinearLayout
+            android:id="@+id/wordAnkiScrollContent"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="@dimen/pt_section_h_padding"
+            android:paddingBottom="20dp">
+
+            <LinearLayout
+                android:id="@+id/wordAnkiDeckHost"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+
+            <FrameLayout
+                android:id="@+id/wordAnkiSentenceHost"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content" />
+
+            <LinearLayout
+                android:id="@+id/wordAnkiWordHost"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+
+        </LinearLayout>
+
+    </androidx.core.widget.NestedScrollView>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="?attr/ptBg">
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="?attr/ptDivider" />
+
+        <FrameLayout
+            android:id="@+id/btnWordAnkiSend"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="12dp"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="8dp"
+            android:minHeight="52dp"
+            android:background="@drawable/bg_anki_save_button"
+            android:clickable="true"
+            android:focusable="true">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:duplicateParentState="true">
+
+                <ImageView
+                    android:layout_width="22dp"
+                    android:layout_height="22dp"
+                    android:src="@drawable/ic_save"
+                    app:tint="?attr/ptAccentOn"
+                    android:layout_marginEnd="12dp"
+                    android:duplicateParentState="true"
+                    android:importantForAccessibility="no" />
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:duplicateParentState="true">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/anki_save_button_label"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:fontFamily="sans-serif-medium"
+                        android:textColor="?attr/ptAccentOn"
+                        android:duplicateParentState="true" />
+
+                    <TextView
+                        android:id="@+id/tvWordAnkiSendSubtitle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textSize="13sp"
+                        android:textColor="?attr/ptAccentOn"
+                        android:duplicateParentState="true" />
+
+                </LinearLayout>
+            </LinearLayout>
+
+        </FrameLayout>
+
+    </LinearLayout>
+
+</LinearLayout>

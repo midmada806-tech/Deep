@@ -1,0 +1,538 @@
+package com.playtranslate.translation
+
+import kotlinx.coroutines.runBlocking
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/**
+ * Unit tests for [TranslationBackendRegistry]. Pure JVM — backends are
+ * fakes, no Robolectric. Android `Log` calls in the registry are no-ops
+ * thanks to `unitTests.isReturnDefaultValues = true` in the app module's
+ * gradle config.
+ *
+ * Covers the waterfall invariants that `CaptureService.translate` now
+ * delegates to the registry:
+ *   - first usable backend wins; subsequent backends are not invoked
+ *   - exception from one backend falls through to the next
+ *   - non-usable backends are skipped without being called
+ *   - the chosen backend's [TranslationBackend.isDegradedFallback] flows
+ *     through to [WaterfallResult.isDegraded]
+ *   - default ordering is by priority; [setOrder] override is honored
+ *   - [preferredOnlineId] picks the first non-degraded usable backend
+ *   - all-fail surfaces an [IllegalStateException] (rather than silently
+ *     returning empty text)
+ */
+class TranslationBackendRegistryTest {
+
+    @After fun tearDown() {
+        TranslationBackendRegistry.close()
+    }
+
+    @Test fun `addOnlineBackend registers after init and setOrder places it`() = runBlocking {
+        val offline = FakeOfflineBackend(id = "offline", priority = 30)
+        TranslationBackendRegistry.init(listOf(offline))
+
+        val added = FakeOnlineBackend(id = "uuid-1", priority = 15, response = "from-added")
+        TranslationBackendRegistry.addOnlineBackend(added)
+        TranslationBackendRegistry.setOrder(listOf("uuid-1"))
+
+        assertEquals(
+            listOf("uuid-1", "offline"),
+            TranslationBackendRegistry.orderedBackends().map { it.id },
+        )
+        assertEquals("from-added", TranslationBackendRegistry.translate("hi", "ja", "en").text)
+    }
+
+    @Test fun `addOnlineBackend with a duplicate id replaces and closes the prior instance`() {
+        val original = FakeOnlineBackend(id = "dup", priority = 15, response = "old")
+        TranslationBackendRegistry.init(listOf(original))
+
+        val replacement = FakeOnlineBackend(id = "dup", priority = 15, response = "new")
+        TranslationBackendRegistry.addOnlineBackend(replacement)
+
+        assertTrue(original.closed)
+        assertEquals(1, TranslationBackendRegistry.orderedBackends().count { it.id == "dup" })
+        assertEquals(replacement, TranslationBackendRegistry.byId("dup"))
+    }
+
+    @Test fun `removeOnlineBackend deregisters and closes, unknown id is a no-op`() {
+        val a = FakeOnlineBackend(id = "a", priority = 10)
+        val b = FakeOnlineBackend(id = "b", priority = 20)
+        TranslationBackendRegistry.init(listOf(a, b))
+
+        TranslationBackendRegistry.removeOnlineBackend("a")
+        TranslationBackendRegistry.removeOnlineBackend("ghost")
+
+        assertTrue(a.closed)
+        assertEquals(listOf("b"), TranslationBackendRegistry.orderedBackends().map { it.id })
+    }
+
+    @Test fun `store-order override puts online instances first then offline by priority`() {
+        // Mirrors the production wiring: online ids in store order via
+        // setOrder; offline tiers keep their priority order after them.
+        val online1 = FakeOnlineBackend(id = "lingva", priority = 15)
+        val online2 = FakeOnlineBackend(id = "uuid-openai", priority = 15)
+        val offlineFast = FakeOfflineBackend(id = "bergamot", priority = 28)
+        val offlineLast = FakeOfflineBackend(id = "mlkit", priority = 30)
+        TranslationBackendRegistry.init(listOf(offlineLast, online1, offlineFast, online2))
+
+        TranslationBackendRegistry.setOrder(listOf("uuid-openai", "lingva"))
+
+        assertEquals(
+            listOf("uuid-openai", "lingva", "bergamot", "mlkit"),
+            TranslationBackendRegistry.orderedBackends().map { it.id },
+        )
+    }
+
+    @Test fun `first usable backend wins, later backends not invoked`() = runBlocking {
+        val first = FakeOnlineBackend(id = "first", priority = 10, response = "from-first")
+        val second = FakeOnlineBackend(id = "second", priority = 20, response = "from-second")
+        TranslationBackendRegistry.init(listOf(first, second))
+
+        val result = TranslationBackendRegistry.translate("hi", "ja", "en")
+
+        assertEquals("from-first", result.text)
+        assertEquals("first", result.backend.id)
+        assertEquals(1, first.translateCalls.get())
+        assertEquals(0, second.translateCalls.get())
+    }
+
+    @Test fun `fallback on exception advances to next backend`() = runBlocking {
+        val throwing = FakeThrowingBackend(id = "throwing", priority = 10)
+        val healthy = FakeOnlineBackend(id = "healthy", priority = 20, response = "from-healthy")
+        TranslationBackendRegistry.init(listOf(throwing, healthy))
+
+        val result = TranslationBackendRegistry.translate("hi", "ja", "en")
+
+        assertEquals("from-healthy", result.text)
+        assertEquals(1, throwing.translateCalls.get())
+        assertEquals(1, healthy.translateCalls.get())
+    }
+
+    @Test fun `non-usable backends are skipped without being called`() = runBlocking {
+        val unusable = FakeOnlineBackend(id = "unusable", priority = 10, usable = false)
+        val healthy = FakeOnlineBackend(id = "healthy", priority = 20, response = "from-healthy")
+        TranslationBackendRegistry.init(listOf(unusable, healthy))
+
+        val result = TranslationBackendRegistry.translate("hi", "ja", "en")
+
+        assertEquals("from-healthy", result.text)
+        assertEquals(0, unusable.translateCalls.get())
+        assertEquals(1, healthy.translateCalls.get())
+    }
+
+    @Test fun `degraded fallback flag flows into WaterfallResult`() = runBlocking {
+        val throwing = FakeThrowingBackend(id = "throwing", priority = 10)
+        val degraded = FakeDegradedBackend(id = "mlkit-fake", priority = 30)
+        TranslationBackendRegistry.init(listOf(throwing, degraded))
+
+        val result = TranslationBackendRegistry.translate("hi", "ja", "en")
+
+        assertTrue(result.isDegraded)
+        assertEquals("mlkit-fake", result.backend.id)
+        assertEquals("offline-fallback", result.text)
+    }
+
+    @Test fun `online success does not set degraded flag`() = runBlocking {
+        val online = FakeOnlineBackend(id = "online", priority = 10)
+        val degraded = FakeDegradedBackend(id = "mlkit-fake", priority = 30)
+        TranslationBackendRegistry.init(listOf(online, degraded))
+
+        val result = TranslationBackendRegistry.translate("hi", "ja", "en")
+
+        assertEquals(false, result.isDegraded)
+    }
+
+    @Test fun `default ordering is by priority then id`() {
+        val a = FakeOnlineBackend(id = "a", priority = 30)
+        val b = FakeOnlineBackend(id = "b", priority = 10)
+        val c = FakeOnlineBackend(id = "c", priority = 20)
+        TranslationBackendRegistry.init(listOf(a, b, c))  // insertion order shuffled
+
+        val ids = TranslationBackendRegistry.orderedBackends().map { it.id }
+
+        assertEquals(listOf("b", "c", "a"), ids)
+    }
+
+    @Test fun `setOrder override puts listed ids first then remainder in default order`() {
+        val a = FakeOnlineBackend(id = "a", priority = 10)
+        val b = FakeOnlineBackend(id = "b", priority = 20)
+        val c = FakeOnlineBackend(id = "c", priority = 30)
+        TranslationBackendRegistry.init(listOf(a, b, c))
+
+        TranslationBackendRegistry.setOrder(listOf("c", "a"))
+        val ids = TranslationBackendRegistry.orderedBackends().map { it.id }
+
+        assertEquals(listOf("c", "a", "b"), ids)
+    }
+
+    @Test fun `setOrder ignores unknown ids`() {
+        val a = FakeOnlineBackend(id = "a", priority = 10)
+        val b = FakeOnlineBackend(id = "b", priority = 20)
+        TranslationBackendRegistry.init(listOf(a, b))
+
+        TranslationBackendRegistry.setOrder(listOf("ghost", "b", "phantom"))
+        val ids = TranslationBackendRegistry.orderedBackends().map { it.id }
+
+        assertEquals(listOf("b", "a"), ids)
+    }
+
+    @Test fun `setOrder null restores default priority order`() {
+        val a = FakeOnlineBackend(id = "a", priority = 10)
+        val b = FakeOnlineBackend(id = "b", priority = 20)
+        TranslationBackendRegistry.init(listOf(a, b))
+
+        TranslationBackendRegistry.setOrder(listOf("b", "a"))
+        TranslationBackendRegistry.setOrder(null)
+
+        val ids = TranslationBackendRegistry.orderedBackends().map { it.id }
+        assertEquals(listOf("a", "b"), ids)
+    }
+
+    @Test fun `preferredOnlineId returns first non-degraded usable id`() {
+        val deepl = FakeOnlineBackend(id = "deepl", priority = 10)
+        val gtx = FakeOnlineBackend(id = "lingva", priority = 20)
+        val mlkit = FakeDegradedBackend(id = "mlkit", priority = 30)
+        TranslationBackendRegistry.init(listOf(deepl, gtx, mlkit))
+
+        assertEquals("deepl", TranslationBackendRegistry.preferredOnlineId("ja", "en"))
+    }
+
+    @Test fun `preferredOnlineId skips unusable online backends`() {
+        val deepl = FakeOnlineBackend(id = "deepl", priority = 10, usable = false)
+        val gtx = FakeOnlineBackend(id = "lingva", priority = 20)
+        val mlkit = FakeDegradedBackend(id = "mlkit", priority = 30)
+        TranslationBackendRegistry.init(listOf(deepl, gtx, mlkit))
+
+        assertEquals("lingva", TranslationBackendRegistry.preferredOnlineId("ja", "en"))
+    }
+
+    @Test fun `preferredOnlineId skips degraded backends`() {
+        val mlkit = FakeDegradedBackend(id = "mlkit", priority = 10)
+        TranslationBackendRegistry.init(listOf(mlkit))
+
+        assertEquals("none", TranslationBackendRegistry.preferredOnlineId("ja", "en"))
+    }
+
+    @Test fun `preferredOnlineId returns none when no backend is usable`() {
+        val deepl = FakeOnlineBackend(id = "deepl", priority = 10, usable = false)
+        TranslationBackendRegistry.init(listOf(deepl))
+
+        assertEquals("none", TranslationBackendRegistry.preferredOnlineId("ja", "en"))
+    }
+
+    @Test fun `all backends throwing surfaces IllegalStateException`() {
+        val a = FakeThrowingBackend(id = "a", priority = 10)
+        val b = FakeThrowingBackend(id = "b", priority = 20)
+        TranslationBackendRegistry.init(listOf(a, b))
+
+        val ex = assertFails {
+            runBlocking { TranslationBackendRegistry.translate("hi", "ja", "en") }
+        }
+        assertTrue(
+            "Expected IllegalStateException, got ${ex::class.simpleName}",
+            ex is IllegalStateException,
+        )
+    }
+
+    @Test fun `empty registry surfaces IllegalStateException with init hint`() {
+        TranslationBackendRegistry.init(emptyList())
+
+        val ex = assertFails {
+            runBlocking { TranslationBackendRegistry.translate("hi", "ja", "en") }
+        }
+        assertTrue(ex is IllegalStateException)
+        assertTrue(ex.message?.contains("init") == true)
+    }
+
+    @Test fun `byId returns the registered backend or null`() {
+        val a = FakeOnlineBackend(id = "a", priority = 10)
+        TranslationBackendRegistry.init(listOf(a))
+
+        assertEquals("a", TranslationBackendRegistry.byId("a")?.id)
+        assertEquals(null, TranslationBackendRegistry.byId("nonexistent"))
+    }
+
+    @Test fun `close calls close on every registered backend`() {
+        val a = FakeOnlineBackend(id = "a", priority = 10)
+        val b = FakeOnlineBackend(id = "b", priority = 20)
+        TranslationBackendRegistry.init(listOf(a, b))
+
+        TranslationBackendRegistry.close()
+
+        assertTrue(a.closed)
+        assertTrue(b.closed)
+    }
+
+    @Test fun `re-init replaces backends and closes prior ones`() {
+        val first = FakeOnlineBackend(id = "first", priority = 10)
+        TranslationBackendRegistry.init(listOf(first))
+
+        val replacement = FakeOnlineBackend(id = "replacement", priority = 10)
+        TranslationBackendRegistry.init(listOf(replacement))
+
+        assertTrue("expected first backend to be closed on re-init", first.closed)
+        assertEquals("replacement", TranslationBackendRegistry.byId("replacement")?.id)
+        assertEquals(null, TranslationBackendRegistry.byId("first"))
+    }
+
+    // ── Cooldownable interaction ─────────────────────────────────────────
+
+    @Test fun `cooldownable backend in cooldown is skipped`() = runBlocking {
+        val cooled = FakeCooldownableBackend(id = "cooled", priority = 10)
+        cooled.cooldownState.recordParsedFailure(
+            retryAt = System.currentTimeMillis() + 60_000,
+            description = "Rate limited",
+        )
+        val healthy = FakeOnlineBackend(id = "healthy", priority = 20, response = "from-healthy")
+        TranslationBackendRegistry.init(listOf(cooled, healthy))
+
+        val result = TranslationBackendRegistry.translate("hi", "ja", "en")
+
+        assertEquals("from-healthy", result.text)
+        assertEquals("expected cooled backend to be skipped without translate()",
+            0, cooled.translateCalls.get())
+        assertEquals(1, healthy.translateCalls.get())
+    }
+
+    @Test fun `earliestCooldownEnd returns the soonest USABLE cooldown`() {
+        val now = System.currentTimeMillis()
+        val late = FakeCooldownableBackend(id = "late", priority = 10)
+        late.cooldownState.recordParsedFailure(now + 300_000, "Rate limited")
+        val soon = FakeCooldownableBackend(id = "soon", priority = 20)
+        soon.cooldownState.recordParsedFailure(
+            now + 60_000, "Monthly quota used", CooldownCause.MONTHLY_QUOTA,
+        )
+        // Soonest of all, but unusable for the pair — a cooldown ticking
+        // on a disabled backend must not drive the "busy until X" label.
+        val disabled = FakeCooldownableBackend(id = "disabled", priority = 30, usable = false)
+        disabled.cooldownState.recordParsedFailure(now + 1_000, "Rate limited")
+        TranslationBackendRegistry.init(listOf(late, soon, disabled))
+
+        val active = TranslationBackendRegistry.earliestCooldownEnd("ja", "en")
+        assertEquals(soon.cooldownState.unavailableUntil(), active?.retryAt)
+        // The soonest backend's typed cause rides along, so the UI can
+        // distinguish quota exhaustion from a transient rate limit.
+        assertEquals(CooldownCause.MONTHLY_QUOTA, active?.cause)
+    }
+
+    @Test fun `onConnectivityRestored clears connection cooldowns on every backend and nothing else`() {
+        val now = System.currentTimeMillis()
+        val offlineA = FakeCooldownableBackend(id = "offline-a", priority = 10)
+        offlineA.cooldownState.recordLadderFailure(
+            CooldownLadder.Network, "Connection failed", CooldownCause.CONNECTION_FAILED,
+        )
+        // Disabled for the pair, yet its connection cooldown must not outlive
+        // the outage either — the user may re-enable it next.
+        val offlineB = FakeCooldownableBackend(id = "offline-b", priority = 20, usable = false)
+        offlineB.cooldownState.recordLadderFailure(
+            CooldownLadder.Network, "Connection failed", CooldownCause.CONNECTION_FAILED,
+        )
+        val limited = FakeCooldownableBackend(id = "limited", priority = 30)
+        limited.cooldownState.recordParsedFailure(now + 300_000, "Rate limited")
+        val plain = FakeOnlineBackend(id = "plain", priority = 40)
+        TranslationBackendRegistry.init(listOf(offlineA, offlineB, limited, plain))
+
+        TranslationBackendRegistry.onConnectivityRestored()
+
+        assertNull(offlineA.unavailableUntil())
+        assertNull(offlineB.unavailableUntil())
+        assertEquals(now + 300_000, limited.unavailableUntil())
+    }
+
+    @Test fun `resetCooldown clears only the named backend`() {
+        val now = System.currentTimeMillis()
+        val toggled = FakeCooldownableBackend(id = "toggled", priority = 10)
+        toggled.cooldownState.recordParsedFailure(
+            now + 3_600_000, "Monthly quota used", CooldownCause.MONTHLY_QUOTA,
+        )
+        val other = FakeCooldownableBackend(id = "other", priority = 20)
+        other.cooldownState.recordParsedFailure(now + 300_000, "Rate limited")
+        TranslationBackendRegistry.init(listOf(toggled, other))
+
+        TranslationBackendRegistry.resetCooldown("toggled")
+        TranslationBackendRegistry.resetCooldown("unknown-id")   // no-op
+
+        assertNull(toggled.unavailableUntil())
+        assertEquals(now + 300_000, other.unavailableUntil())
+    }
+
+    @Test fun `earliestCooldownEnd is null with no active cooldowns`() {
+        TranslationBackendRegistry.init(listOf(FakeCooldownableBackend(id = "ready", priority = 10)))
+        assertNull(TranslationBackendRegistry.earliestCooldownEnd("ja", "en"))
+    }
+
+    @Test fun `cooldownable backend recordSuccess called on win`() = runBlocking {
+        val winning = FakeCooldownableBackend(id = "winning", priority = 10, response = "first")
+        TranslationBackendRegistry.init(listOf(winning))
+
+        TranslationBackendRegistry.translate("hi", "ja", "en")
+
+        assertEquals(1, winning.recordSuccessCalls.get())
+    }
+
+    @Test fun `expired cooldown is honoured and backend re-enters waterfall`() = runBlocking {
+        val cooled = FakeCooldownableBackend(id = "cooled", priority = 10, response = "from-cooled")
+        // Set cooldown 1ms in the past — auto-expires immediately on read.
+        cooled.cooldownState.recordParsedFailure(
+            retryAt = System.currentTimeMillis() - 1,
+            description = "Rate limited",
+        )
+        val healthy = FakeOnlineBackend(id = "healthy", priority = 20, response = "from-healthy")
+        TranslationBackendRegistry.init(listOf(cooled, healthy))
+
+        val result = TranslationBackendRegistry.translate("hi", "ja", "en")
+
+        // Cooled re-enters because retryAt is in the past.
+        assertEquals("from-cooled", result.text)
+        assertEquals(1, cooled.translateCalls.get())
+        assertEquals(0, healthy.translateCalls.get())
+    }
+
+    @Test fun `a batch shape failure retries per-text on the same backend`() = runBlocking {
+        // BatchParseException is the LLM backends' and DeepL's signal
+        // that the BATCH request failed (malformed JSON envelope, the
+        // 50-string cap) while the per-text request, a different one,
+        // is expected to work: every text is retried here before any
+        // fallback is consulted.
+        val llm = FakeFailingBatchBackend(
+            id = "llm", priority = 10,
+            batchException = BatchParseException("envelope malformed"),
+        )
+        val fallback = FakeOnlineBackend(id = "fallback", priority = 20)
+        TranslationBackendRegistry.init(listOf(llm, fallback))
+
+        val results = TranslationBackendRegistry.translateBatch(listOf("a", "b", "c"), "ja", "en")
+
+        assertEquals(1, llm.batchCalls.get())
+        assertEquals(3, llm.translateCalls.get())
+        assertEquals(0, fallback.translateCalls.get())
+        assertTrue(results.all { it.backend === llm })
+    }
+
+    @Test fun `a structural batch failure makes no per-text requests and moves the full list on`() = runBlocking {
+        // Lingva's shape failures: its per-text path hits the same
+        // endpoint with the same parser, so a per-text retry would be N
+        // identical failures against the per-IP limiter. The registry
+        // must send nothing more to that backend and hand every text to
+        // the next one.
+        val lingva = FakeFailingBatchBackend(
+            id = "lingva", priority = 10,
+            batchException = StructuralFailureException(
+                "Lingva batch: chunk at index 0: top length 1 != q count 3", BackendFailure.BAD_RESPONSE,
+            ),
+        )
+        val fallback = FakeOnlineBackend(id = "fallback", priority = 20)
+        TranslationBackendRegistry.init(listOf(lingva, fallback))
+
+        val results = TranslationBackendRegistry.translateBatch(listOf("a", "b", "c"), "ja", "en")
+
+        assertEquals(1, lingva.batchCalls.get())
+        assertEquals("no per-text retry on the failing backend", 0, lingva.translateCalls.get())
+        assertEquals(3, fallback.translateCalls.get())
+        assertTrue(results.all { it.backend === fallback })
+    }
+
+    @Test fun `per-text fan-out with mixed results preserves cooldown set by failing sibling`() = runBlocking {
+        // Regression for Codex finding: when a per-text fan-out has 1+
+        // success and 1+ failure-that-records-a-cooldown, we must NOT
+        // call recordSuccess() afterwards — that would erase the
+        // failure's cooldown and re-hammer the throttled provider on
+        // the next waterfall pass.
+        val mixed = FakeMixedResultCooldownableBackend(
+            id = "mixed",
+            priority = 10,
+            failingTexts = setOf("bad"),
+        )
+        val healthy = FakeOnlineBackend(id = "healthy", priority = 20)
+        TranslationBackendRegistry.init(listOf(mixed, healthy))
+
+        val results = TranslationBackendRegistry.translateBatch(
+            listOf("good", "bad"), "ja", "en",
+        )
+
+        // Both texts return — "good" via mixed, "bad" via the healthy fallback.
+        assertEquals(2, results.size)
+        // Most important: the cooldown set by the "bad" text must still be set.
+        assertTrue("expected mixed.unavailableUntil() > now",
+            (mixed.unavailableUntil() ?: 0L) > System.currentTimeMillis())
+        // And recordSuccess must NOT have been called, since the pass had a failure.
+        assertEquals(0, mixed.recordSuccessCalls.get())
+    }
+
+    @Test fun `per-text fan-out with all-success calls recordSuccess`() = runBlocking {
+        // Counterpart to the mixed-result test: when every text in the
+        // fan-out succeeds, the backend is "healthy for the next pass"
+        // and recordSuccess clears any prior ladder state.
+        val cool = FakeMixedResultCooldownableBackend(
+            id = "cool",
+            priority = 10,
+            failingTexts = emptySet(),  // all texts succeed
+        )
+        TranslationBackendRegistry.init(listOf(cool))
+
+        TranslationBackendRegistry.translateBatch(listOf("a", "b", "c"), "ja", "en")
+
+        assertEquals(1, cool.recordSuccessCalls.get())
+    }
+
+    @Test fun `preferredOnlineId excludes a cooled-down higher-priority backend`() {
+        // The cache layer uses preferredOnlineId to decide when to
+        // invalidate. Skipping a cooled-down backend here means the
+        // cache's reconcile flips identity on cooldown enter/exit and
+        // drops stale fallback entries automatically — no per-result
+        // bookkeeping in WaterfallResult needed.
+        val preferred = FakeCooldownableBackend(id = "preferred", priority = 10)
+        preferred.cooldownState.recordParsedFailure(
+            retryAt = System.currentTimeMillis() + 60_000,
+            description = "Rate limited",
+        )
+        val fallback = FakeOnlineBackend(id = "fallback", priority = 20)
+        TranslationBackendRegistry.init(listOf(preferred, fallback))
+
+        // While preferred is in cooldown, fallback is the preferred id.
+        assertEquals("fallback", TranslationBackendRegistry.preferredOnlineId("ja", "en"))
+
+        // After we clear it (simulate recovery), preferred returns.
+        preferred.cooldownState.recordSuccess(System.currentTimeMillis())
+        assertEquals("preferred", TranslationBackendRegistry.preferredOnlineId("ja", "en"))
+    }
+
+    @Test fun `preferredOnlineId returns first usable when no cooldowns are active`() {
+        val first = FakeCooldownableBackend(id = "first", priority = 10)
+        val second = FakeOnlineBackend(id = "second", priority = 20)
+        TranslationBackendRegistry.init(listOf(first, second))
+
+        assertEquals("first", TranslationBackendRegistry.preferredOnlineId("ja", "en"))
+    }
+
+    @Test fun `non-cooldownable backends are not affected by the skip check`() = runBlocking {
+        // Mixing a non-Cooldownable backend with cooldowned ones at lower
+        // priority verifies the cast-then-check doesn't NPE or affect
+        // backends that opt out.
+        val plain = FakeOnlineBackend(id = "plain", priority = 10)
+        val coolBackup = FakeCooldownableBackend(id = "backup", priority = 20)
+        coolBackup.cooldownState.recordParsedFailure(
+            retryAt = System.currentTimeMillis() + 60_000,
+            description = "Rate limited",
+        )
+        TranslationBackendRegistry.init(listOf(plain, coolBackup))
+
+        val result = TranslationBackendRegistry.translate("hi", "ja", "en")
+        assertEquals("translated-by-plain", result.text)
+        assertEquals(1, plain.translateCalls.get())
+        assertEquals(0, coolBackup.translateCalls.get())
+    }
+
+    private fun assertFails(block: () -> Unit): Throwable {
+        try {
+            block()
+        } catch (e: Throwable) {
+            return e
+        }
+        throw AssertionError("Expected block to throw, but it returned normally")
+    }
+}

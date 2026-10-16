@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <!-- Toolbar -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <View android:layout_width="72dp" android:layout_height="1dp" />
+
+        <TextView
+            android:id="@+id/tvCustomRegionTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/label_add_custom_region_title"
+            android:textColor="?attr/ptText"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:gravity="center" />
+
+        <Button
+            android:id="@+id/btnCloseCustomRegion"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="72dp"
+            android:layout_height="wrap_content"
+            android:text="@string/dialog_close_glyph"
+            android:textColor="?attr/ptTextMuted"
+            android:textSize="18sp"
+            android:minWidth="0dp"
+            android:minHeight="0dp" />
+
+    </LinearLayout>
+
+    <!-- Divider -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="?attr/ptDivider" />
+
+    <!-- Content -->
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="20dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/label_region_drag_hint"
+                android:textColor="?attr/ptTextMuted"
+                android:textSize="13sp"
+                android:lineSpacingMultiplier="1.4"
+                android:layout_marginBottom="24dp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/label_region_name"
+                android:textColor="?attr/ptTextMuted"
+                android:textSize="11sp"
+                android:letterSpacing="0.1"
+                android:textAllCaps="true"
+                android:layout_marginBottom="6dp" />
+
+            <EditText
+                android:id="@+id/etRegionName"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="@string/hint_region_name"
+                android:importantForAutofill="no"
+                android:textColor="?attr/ptText"
+                android:textColorHint="?attr/ptTextHint"
+                android:textSize="15sp"
+                android:background="?attr/ptCard"
+                android:padding="12dp"
+                android:inputType="text"
+                android:imeOptions="actionDone"
+                android:maxLines="1" />
+
+        </LinearLayout>
+
+    </ScrollView>
+
+    <!-- Divider -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="?attr/ptDivider" />
+
+    <!-- Use Without Saving — plain bold text, no button chrome -->
+    <TextView
+        android:id="@+id/btnTranslateOnce"
+        android:layout_width="match_parent"
+        android:layout_height="72dp"
+        android:text="@string/btn_translate_once"
+        android:textColor="?attr/ptAccent"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:gravity="center"
+        android:background="?attr/selectableItemBackground"
+        android:clickable="true"
+        android:focusable="true" />
+
+    <!-- Save button -->
+    <Button
+        android:id="@+id/btnSaveCustomRegion"
+        android:layout_width="match_parent"
+        android:layout_height="72dp"
+        android:layout_marginHorizontal="12dp"
+        android:layout_marginTop="4dp"
+        android:layout_marginBottom="12dp"
+        android:text="@string/btn_save_to_list"
+        android:backgroundTint="?attr/ptAccent"
+        android:textColor="?attr/ptAccentOn" />
+
+</LinearLayout>
